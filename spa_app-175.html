@@ -1008,6 +1008,7 @@ const ADMIN_NAV_ITEMS = [
   { id: "agents", label: "الوكلاء", icon: "Users", description: "إدارة حسابات الوكلاء وأرصدتهم وصلاحياتهم" },
   { id: "customers", label: "العملاء", icon: "UserCog", description: "إدارة سجلات العملاء وربطهم بالوكيل المسؤول عنهم" },
   { id: "providers", label: "المزوّدون", icon: "Building2", description: "إدارة مزوّدي الخدمات وربطهم بالمنتجات" },
+  { id: "agentsBackend", label: "الوكلاء (النظام الفعلي)", icon: "Users", description: "إدارة الوكلاء عبر الخادم الفعلي (حساب دخول + رصيد مشتق من دفتر الأستاذ)" },
   { id: "telecomCompanies", label: "شركات الاتصالات", icon: "RadioTower", description: "إدارة شركات الاتصالات وباقاتها ومنتجاتها" },
   { id: "wifi", label: "الواي فاي", icon: "Wifi", description: "إدارة منظومة الواي فاي: ملاك الشبكات، الشبكات، والمخزون" },
   { id: "games", label: "الألعاب", icon: "Gamepad2", description: "إدارة كتالوج الألعاب والمنتجات الرقمية" },
@@ -4671,6 +4672,143 @@ async function loadProviderMappingsFromBackend(packageId) {
   }
   PROVIDER_MAPPING_DIRECTORY.push(...mappings);
   render();
+}
+
+/**
+ * PHASE: AGENT + WALLET/BALANCE + EXISTING TRANSACTION V1 — Agent Admin API
+ * (`agent-admin-routes.ts`), same one-wrapper-per-real-route discipline as
+ * BackendProviderApi above. No endpoint invented.
+ */
+const BackendAgentApi = {
+  list() { return ApiClient.get("/api/v1/admin/agents"); },
+  get(id) { return ApiClient.get("/api/v1/admin/agents/" + encodeURIComponent(id)); },
+  create(payload) { return ApiClient.post("/api/v1/admin/agents", payload); },
+  update(id, patch) { return ApiClient.patch("/api/v1/admin/agents/" + encodeURIComponent(id), patch); },
+  activate(id) { return ApiClient.post("/api/v1/admin/agents/" + encodeURIComponent(id) + "/activate", undefined); },
+  deactivate(id) { return ApiClient.post("/api/v1/admin/agents/" + encodeURIComponent(id) + "/deactivate", undefined); },
+};
+
+/**
+ * `GET /api/v1/auth/me` — lets this SPA tell an Admin identity (holds a
+ * role) apart from an ownership-only identity such as an Agent (holds no
+ * role at all) after a real login, so it can route to the right screen.
+ */
+const BackendAuthApi = {
+  me() { return ApiClient.get("/api/v1/auth/me"); },
+};
+
+/**
+ * `GET /api/v1/wallet/balance` — READ ONLY, always the authenticated
+ * actor's OWN party (never a target id this client could supply — the
+ * backend route itself has no such parameter). This is the ONLY place
+ * this SPA ever displays a real balance; it is never written here, never
+ * computed here, and never merged with the legacy mock `agent.balance`.
+ */
+const BackendWalletApi = {
+  getBalance(currency) { return ApiClient.get("/api/v1/wallet/balance?currency=" + encodeURIComponent(currency)); },
+};
+
+/**
+ * AGENT_BACKEND_DIRECTORY — the real-backend counterpart's own local
+ * mirror, deliberately separate from AGENT_DIRECTORY (the pre-existing
+ * mock module's own array, untouched). Carries NO balance field — an
+ * Agent's real balance is never visible from this admin list (§2 of this
+ * phase's own execution order), only to that Agent's own logged-in session.
+ */
+const AGENT_BACKEND_DIRECTORY = [];
+function findAgentBackendById(id) {
+  return AGENT_BACKEND_DIRECTORY.find((a) => a.id === id) || null;
+}
+function mapBackendAgentToDirectoryRecord(dto) {
+  return {
+    id: dto.id,
+    partyType: dto.party_type,
+    parentId: dto.parent_id,
+    accountNumber: dto.account_number,
+    displayName: dto.display_name,
+    phone: dto.phone,
+    zoneCode: dto.zone_code,
+    currency: dto.currency,
+    status: dto.status, // PENDING_VERIFICATION | ACTIVE | SUSPENDED | BLOCKED | CLOSING | CLOSED — the real, frozen Party vocabulary
+  };
+}
+async function loadAgentsBackendFromBackend() {
+  const av = state.admin.modules.agentsBackend;
+  av.loading = true; av.loadError = null; av.notice = null;
+  render();
+  const result = await BackendAgentApi.list();
+  av.loading = false;
+  if (result.status === 401) { handleApiUnauthorized(); return; }
+  if (!result.ok) {
+    av.loadError = describeApiError(result);
+    render();
+    return;
+  }
+  const mapped = result.data.map(mapBackendAgentToDirectoryRecord);
+  AGENT_BACKEND_DIRECTORY.length = 0;
+  AGENT_BACKEND_DIRECTORY.push(...mapped);
+  render();
+}
+
+/**
+ * PHASE: AGENT + WALLET/BALANCE + EXISTING TRANSACTION V1 — "My Wallet"
+ * home screen: what a REAL backend identity holding no role (e.g. an
+ * Agent) lands on after login, since it has no Admin Panel to enter.
+ * Shows ONLY its own balance, read live via GET /api/v1/wallet/balance
+ * (already scoped to `actor.partyId` server-side — this screen has no
+ * mechanism to request anyone else's). Honest states: loading, error,
+ * "no wallet position yet" (a legitimate 404, not a zero balance), and
+ * success. Never merges with, or falls back to, the mock AGENT_DIRECTORY/
+ * agent.balance path — this is a genuinely different identity/data source.
+ */
+async function loadMyWalletBalance() {
+  const w = state.session.myWallet;
+  w.loading = true; w.error = null;
+  render();
+  const result = await BackendWalletApi.getBalance(w.currency);
+  w.loading = false;
+  if (result.status === 401) { handleApiUnauthorized(); return; }
+  if (!result.ok) {
+    if (result.status === 404) {
+      // A genuine, honest absence — no wallet position has ever been
+      // provisioned for this party+currency yet. Never fabricated as 0.
+      w.data = null; w.error = null;
+      render();
+      return;
+    }
+    w.error = describeApiError(result);
+    render();
+    return;
+  }
+  w.data = result.data;
+  render();
+}
+function renderMyWalletHomeScreen() {
+  const theme = GOLD_THEME;
+  const w = state.session.myWallet;
+  const balanceBodyHTML = w.loading
+    ? '<div style="font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:12px;color:' + C.textDim + ';">جارٍ التحميل من الخادم…</div>'
+    : w.error
+      ? '<div style="font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:12px;color:' + C.danger + ';">' + w.error + '</div>'
+      : w.data
+        ? '<div style="font-family:Cairo,sans-serif;font-weight:800;font-size:26px;color:' + (theme.bright || theme.accent) + ';direction:ltr;">' + Number(w.data.available).toLocaleString("en-US") + ' <span style="font-size:13px;">' + w.data.currency + '</span></div>' +
+          '<div style="margin-top:4px;font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:10.5px;color:' + C.textFaint + ';">مصدر: دفتر الأستاذ (Ledger) — رصيد مشتق، وليس حقلاً مباشراً</div>'
+        : '<div style="font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:12px;color:' + C.textDim + ';">لا يوجد رصيد مُنشأ لهذه العملة بعد</div>';
+  return '' +
+    '<div style="padding:20px 20px 0;display:flex;align-items:center;justify-content:space-between;">' +
+      '<div>' +
+        '<div style="font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:12px;color:' + C.textDim + ';margin-bottom:2px;">مرحباً</div>' +
+        '<div style="font-family:Cairo,sans-serif;font-weight:800;font-size:15px;color:' + C.text + ';">' + (state.session.backendPartyId || "") + '</div>' +
+      '</div>' +
+      '<button id="btn-my-wallet-logout" aria-label="تسجيل الخروج" style="width:38px;height:38px;border-radius:11px;background:' + C.glass + ';border:1px solid ' + C.glassBorder + ';display:flex;align-items:center;justify-content:center;cursor:pointer;">' + Icons.X(16, C.textDim) + '</button>' +
+    '</div>' +
+    '<div style="padding:20px 20px 0;">' +
+      '<div style="border-radius:18px;padding:22px;background:linear-gradient(135deg, ' + theme.soft + ', transparent);border:1px solid ' + theme.border + ';text-align:center;">' +
+        '<div style="font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:11.5px;color:' + C.textDim + ';margin-bottom:6px;">رصيدي — ' + w.currency + '</div>' +
+        balanceBodyHTML +
+        '<button id="btn-my-wallet-refresh" style="margin-top:14px;padding:8px 16px;border-radius:10px;background:rgba(255,255,255,0.06);border:1px solid ' + C.glassBorder + ';color:' + (theme.bright || theme.accent) + ';font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:12px;cursor:pointer;">تحديث</button>' +
+      '</div>' +
+    '</div>';
 }
 
 /**
@@ -11320,6 +11458,7 @@ const ADMIN_ACTION_PERMISSION_DIRECTORY = [
   { id: "adminactionperm_catalog_manage", key: "admin.action.catalog.manage", label: "إدارة الكتالوج", description: "إضافة أو تعديل شركات الاتصالات، الألعاب، والخدمات" },
   { id: "adminactionperm_providers_manage", key: "admin.action.providers.manage", label: "إدارة المزوّدين", description: "إضافة أو تعديل بيانات المزوّد، أو تغيير حالته (نشط/معطّل)" },
   { id: "adminactionperm_providers_manageaccounts", key: "admin.action.providers.manageAccounts", label: "إدارة حسابات المزوّدين", description: "إضافة أو تعديل حساب مزوّد (شمال/جنوب)، أو تغيير حالته" },
+  { id: "adminactionperm_agentsbackend_manage", key: "admin.action.agentsBackend.manage", label: "إدارة الوكلاء (النظام الفعلي)", description: "إضافة أو تعديل بيانات وكيل حقيقي على الخادم، أو تفعيله/إيقافه" },
   { id: "adminactionperm_wifi_generatecards", key: "admin.action.wifi.generateCards", label: "توليد بطاقات الواي فاي", description: "إصدار دفعات جديدة من بطاقات الواي فاي" },
   { id: "adminactionperm_commissions_editpricing", key: "admin.action.commissions.editPricing", label: "تعديل التسعير والعمولات", description: "تعديل سياسات العمولة، العملات، قواعد التسعير، البوابات، الفئات التجارية، وربط مزوّدي الاتصالات" },
   { id: "adminactionperm_commissions_settle", key: "admin.action.commissions.settle", label: "تسوية العمولات", description: "تنفيذ تسوية (صرف) عمولات الوكلاء المستحقة" },
@@ -17623,6 +17762,12 @@ function freshSessionState() {
     // Kept in memory only, never persisted (see this file's own
     // BACKEND INTEGRATION LAYER header comment on why).
     refreshToken: null,
+    // PHASE: AGENT + WALLET/BALANCE + EXISTING TRANSACTION V1 — set only
+    // for a REAL backend session that holds NO role (an ownership-only
+    // identity, e.g. an Agent — see GET /api/v1/auth/me's own doc
+    // comment on why this distinguishes it from an Admin identity).
+    backendPartyId: null,
+    myWallet: { loading: false, error: null, currency: "YER", data: null },
   };
 }
 /** Fixes a real regression: state.admin.modules.wifi.networksWorkspace
@@ -17767,7 +17912,10 @@ function persistAuthState() {
   // freshSessionState()'s own doc comment on why). Every other field of
   // `state.session`, including the access token, is persisted exactly
   // as this function already did before this phase.
-  const persistable = Object.assign({}, state.session, { refreshToken: null });
+  // PHASE: AGENT + WALLET/BALANCE + EXISTING TRANSACTION V1 — `myWallet`
+  // is excluded too: a cached balance is exactly the kind of "stale data
+  // presented as fresh" §16 forbids. A reload always refetches it live.
+  const persistable = Object.assign({}, state.session, { refreshToken: null, myWallet: { loading: false, error: null, currency: "YER", data: null } });
   PersistenceStore.save("session", persistable);
 }
 /**
@@ -19181,6 +19329,38 @@ const state = {
           error: null,
         },
       },
+      // PHASE: AGENT + WALLET/BALANCE + EXISTING TRANSACTION V1 — a NEW,
+      // additive module, deliberately separate from `agents` above (the
+      // pre-existing, untouched mock Agent Management module, whose own
+      // AGENT_DIRECTORY/balance-adjust/transfer forms are local-only and
+      // stay that way — see agent.balance's own doc comment: porting that
+      // mutation pattern to a real backend is explicitly forbidden). This
+      // module talks ONLY to the real Agent Admin API
+      // (`/api/v1/admin/agents` — Party of type AGENT/MASTER_AGENT/
+      // SUB_AGENT + a paired UserAccount). It never reads or writes
+      // AGENT_DIRECTORY, and it shows no balance field at all — an
+      // Agent's own real balance is visible only to that Agent, once
+      // logged in, via `myWalletBalance` below (Owner Execution Order §2:
+      // "لا توسع wallet API بلا حاجة").
+      agentsBackend: {
+        loading: false,
+        loadError: null,
+        notice: null,
+        agentForm: {
+          open: false,
+          mode: "add", // "add" | "edit"
+          editingAgentId: null,
+          partyType: "AGENT", // "AGENT" | "MASTER_AGENT" | "SUB_AGENT"
+          accountNumber: "",
+          displayName: "",
+          phone: "",
+          zoneCode: "SOUTH", // "SOUTH" | "NORTH" | "SA" — the three frozen zones
+          loginIdentifier: "",
+          password: "",
+          submitting: false,
+          error: null,
+        },
+      },
     },
     // Prepared, not implemented (§2) — the data shape a future Agent
     // Simulation feature needs, so building it later never requires
@@ -19668,6 +19848,8 @@ function render() {
     root.innerHTML = renderUnifiedLoginScreen();
   } else if (state.app.currentScreen === "workspaceSelect") {
     root.innerHTML = renderWorkspaceSelectScreen();
+  } else if (state.app.currentScreen === "myWalletHome") {
+    root.innerHTML = renderMyWalletHomeScreen();
   } else if (state.app.currentScreen === "dashboard") {
     root.innerHTML = renderDashboardScreen();
   } else if (state.app.currentScreen === "operations") {
@@ -29671,6 +29853,182 @@ async function toggleProviderMappingStatus(mappingId) {
   await loadProviderMappingsFromBackend(m.packageId);
 }
 
+/* ════════════════════════════════════════════════════════════════════
+   AGENT ADMIN (real backend) — PHASE: AGENT + WALLET/BALANCE + EXISTING
+   TRANSACTION V1. A NEW, additive top-level module, mirroring
+   AdminProvidersModuleHTML's own structure exactly (loading/error/empty
+   states, list + add button + form dialog). Talks ONLY to
+   BackendAgentApi (`/api/v1/admin/agents`). Deliberately does not touch
+   AGENT_DIRECTORY, WALLET_LEDGER, or any balance field — see this
+   module's own state-shape comment for why.
+   ════════════════════════════════════════════════════════════════════ */
+const ADMIN_AGENT_BACKEND_PARTY_TYPE_OPTIONS = [
+  { value: "AGENT", label: "وكيل" },
+  { value: "MASTER_AGENT", label: "وكيل رئيسي" },
+  { value: "SUB_AGENT", label: "وكيل فرعي" },
+];
+const ADMIN_AGENT_BACKEND_ZONE_OPTIONS = [
+  { value: "SOUTH", label: "الجنوب" },
+  { value: "NORTH", label: "الشمال" },
+  { value: "SA", label: "السعودية" },
+];
+/**
+ * The honest, real Party status vocabulary (six frozen values,
+ * `shared/types/ids.ts` on the backend) — never collapsed into a
+ * two-state "active/inactive" guess. "Activate"/"Deactivate" on this
+ * screen move between ACTIVE and SUSPENDED only; BLOCKED/CLOSING/CLOSED
+ * have no UI action here (no admin mutation reaches them yet).
+ */
+function agentBackendLifecycleBadge(status) {
+  if (status === "ACTIVE") return { label: "نشط (مُفعّل)", color: "#5FBF8F", isActive: true };
+  if (status === "PENDING_VERIFICATION") return { label: "قيد التحقق", color: "#C9A44C", isActive: false };
+  if (status === "SUSPENDED") return { label: "موقوف", color: "#E0667A", isActive: false };
+  return { label: status, color: "#8A8A8A", isActive: false };
+}
+function AdminAgentsBackendModuleHTML(theme) {
+  const canManage = currentAccountHasAdminActionPermission("admin.action.agentsBackend.manage");
+  const av = state.admin.modules.agentsBackend;
+
+  if (av.loading) {
+    return '<div style="padding:30px 0;text-align:center;font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:12.5px;color:' + C.textFaint + ';">جارٍ تحميل الوكلاء من الخادم…</div>';
+  }
+  if (av.loadError) {
+    return '<div style="padding:16px;border-radius:12px;background:' + C.dangerSoft + ';font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:12.5px;color:' + C.danger + ';text-align:center;">' + av.loadError +
+      '<div style="margin-top:10px;"><button id="btn-admin-agents-backend-retry" style="padding:8px 16px;border-radius:9px;border:1px solid ' + C.danger + ';background:transparent;color:' + C.danger + ';cursor:pointer;font-family:Cairo,sans-serif;font-weight:700;font-size:12px;">إعادة المحاولة</button></div></div>';
+  }
+
+  const noticeHTML = av.notice
+    ? '<div style="margin-bottom:10px;padding:10px 14px;border-radius:11px;background:' + C.dangerSoft + ';font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:12px;color:' + C.danger + ';">' + av.notice + '</div>'
+    : "";
+
+  let rowsHTML = AGENT_BACKEND_DIRECTORY.map((a) => AdminAgentBackendRowHTML(a, canManage)).join("");
+  if (AGENT_BACKEND_DIRECTORY.length === 0) {
+    rowsHTML = '<div style="padding:20px 0;text-align:center;font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:12px;color:' + C.textGhost + ';">لا يوجد وكلاء بعد على الخادم الفعلي</div>';
+  }
+  const addButtonHTML = canManage
+    ? '<button id="btn-admin-agent-backend-add" style="width:100%;display:flex;align-items:center;justify-content:center;gap:7px;padding:11px 0;border-radius:11px;cursor:pointer;background:linear-gradient(135deg, ' + (theme.bright || theme.accent) + ', ' + theme.accent + ');border:none;margin-bottom:6px;">' +
+        Icons.Plus(13, "#1A1408") + '<span style="font-family:\'IBM Plex Sans Arabic\',sans-serif;font-weight:700;font-size:12.5px;color:#1A1408;">إضافة وكيل</span>' +
+      '</button>'
+    : "";
+  const formDialogHTML = av.agentForm.open ? AdminAgentBackendFormDialogHTML(theme) : "";
+  return noticeHTML + addButtonHTML + '<div>' + rowsHTML + '</div>' + formDialogHTML;
+}
+function AdminAgentBackendRowHTML(a, canManage) {
+  const badge = agentBackendLifecycleBadge(a.status);
+  const toggleIcon = badge.isActive ? "Pause" : "CircleCheck";
+  const typeLabel = (ADMIN_AGENT_BACKEND_PARTY_TYPE_OPTIONS.find((t) => t.value === a.partyType) || {}).label || a.partyType;
+  const editToggleHTML = canManage
+    ? '<button class="admin-agent-backend-edit" data-agent-id="' + a.id + '" style="width:26px;height:26px;border-radius:7px;background:rgba(255,255,255,0.05);border:1px solid ' + C.glassBorder + ';display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;">' + Icons.Pencil(11, C.textDim) + '</button>' +
+      '<button class="admin-agent-backend-toggle" data-agent-id="' + a.id + '" style="width:26px;height:26px;border-radius:7px;background:rgba(255,255,255,0.05);border:1px solid ' + C.glassBorder + ';display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;">' + Icons[toggleIcon](11, C.textDim) + '</button>'
+    : "";
+  return '<div style="display:flex;align-items:center;gap:8px;padding:12px 0;border-top:1px solid ' + C.glassBorder + ';">' +
+    '<div style="flex:1;min-width:0;">' +
+      '<div style="font-family:Cairo,sans-serif;font-weight:700;font-size:13px;color:' + C.text + ';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + a.displayName + '</div>' +
+      '<div style="font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:10.5px;color:' + C.textFaint + ';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + typeLabel + ' · ' + a.accountNumber + ' · ' + a.phone + '</div>' +
+    '</div>' +
+    AdminTableBadgeHTML(badge.label, badge.color) +
+    editToggleHTML +
+  '</div>';
+}
+const ADMIN_AGENT_BACKEND_FORM_FIELDS = [
+  { id: "abf-party-type", key: "partyType", label: "نوع الوكيل", type: "select", options: ADMIN_AGENT_BACKEND_PARTY_TYPE_OPTIONS },
+  { id: "abf-display-name", key: "displayName", label: "الاسم", type: "text", required: true },
+  { id: "abf-account-number", key: "accountNumber", label: "رقم الحساب", type: "text", required: true },
+  { id: "abf-phone", key: "phone", label: "الهاتف", type: "text", required: true, inputMode: "tel" },
+  { id: "abf-zone", key: "zoneCode", label: "المنطقة", type: "select", options: ADMIN_AGENT_BACKEND_ZONE_OPTIONS },
+  { id: "abf-login-identifier", key: "loginIdentifier", label: "معرّف الدخول", type: "text", required: true },
+];
+function openAddAgentBackendForm() {
+  state.admin.modules.agentsBackend.agentForm = {
+    open: true, mode: "add", editingAgentId: null,
+    partyType: "AGENT", accountNumber: "", displayName: "", phone: "",
+    zoneCode: "SOUTH", loginIdentifier: "", password: "",
+    submitting: false, error: null,
+  };
+  render();
+}
+function openEditAgentBackendForm(agentId) {
+  const a = findAgentBackendById(agentId);
+  if (!a) return;
+  state.admin.modules.agentsBackend.agentForm = {
+    open: true, mode: "edit", editingAgentId: a.id,
+    partyType: a.partyType, accountNumber: a.accountNumber, displayName: a.displayName, phone: a.phone,
+    zoneCode: a.zoneCode, loginIdentifier: "", password: "",
+    submitting: false, error: null,
+  };
+  render();
+}
+function AdminAgentBackendFormDialogHTML(theme) {
+  const f = state.admin.modules.agentsBackend.agentForm;
+  const title = f.mode === "add" ? "إضافة وكيل" : "تعديل الوكيل";
+  const errorHTML = f.error ? '<div style="margin-bottom:14px;padding:10px 14px;border-radius:11px;background:' + C.dangerSoft + ';font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:12px;color:' + C.danger + ';text-align:center;">' + f.error + '</div>' : "";
+  let fieldsHTML = errorHTML;
+  for (const field of ADMIN_AGENT_BACKEND_FORM_FIELDS) {
+    // Identity fields (party_type, login_identifier) are fixed once
+    // created — only contact details are editable, mirroring the real
+    // backend's own AgentUpdatePatch (displayName/phone/accountNumber only).
+    if (f.mode === "edit" && (field.key === "partyType" || field.key === "loginIdentifier" || field.key === "zoneCode")) continue;
+    fieldsHTML += AdminFormFieldHTML(field, f[field.key], null);
+  }
+  if (f.mode === "add") {
+    fieldsHTML += AdminFormFieldHTML({ id: "abf-password", key: "password", label: "كلمة المرور الأولية", type: "password", required: true }, f.password, null);
+  }
+  const footerHTML = '' +
+    '<div style="display:flex;gap:10px;margin-top:6px;">' +
+      '<button id="btn-admin-agent-backend-form-cancel" style="flex:1;padding:12px 0;border-radius:12px;cursor:pointer;background:rgba(255,255,255,0.05);border:1px solid ' + C.glassBorder + ';color:' + C.textDim + ';font-family:Cairo,sans-serif;font-weight:700;font-size:13px;">إلغاء</button>' +
+      '<button id="btn-admin-agent-backend-form-save" style="flex:2;padding:12px 0;border-radius:12px;border:none;cursor:pointer;background:linear-gradient(135deg, ' + (theme.bright || theme.accent) + ', ' + theme.accent + ');color:#1A1408;font-family:Cairo,sans-serif;font-weight:800;font-size:13.5px;">' + (f.mode === "add" ? "إضافة" : "حفظ") + '</button>' +
+    '</div>';
+  return AdminFormDialogShellHTML("admin-agent-backend-form-overlay", title, fieldsHTML, footerHTML);
+}
+async function saveAgentBackendForm() {
+  const f = state.admin.modules.agentsBackend.agentForm;
+  if (f.submitting) return;
+  if (!currentAccountHasAdminActionPermission("admin.action.agentsBackend.manage")) { f.error = "لا تملك صلاحية تنفيذ هذا الإجراء"; render(); return; }
+  const displayName = f.displayName.trim();
+  const accountNumber = f.accountNumber.trim();
+  const phone = f.phone.trim();
+  if (f.mode === "add") {
+    const loginIdentifier = f.loginIdentifier.trim();
+    if (!displayName || !accountNumber || !phone || !loginIdentifier || !f.password) {
+      f.error = "جميع الحقول المطلوبة يجب تعبئتها"; render(); return;
+    }
+  } else if (!displayName || !accountNumber || !phone) {
+    f.error = "جميع الحقول المطلوبة يجب تعبئتها"; render(); return;
+  }
+
+  f.submitting = true; f.error = null;
+  render();
+
+  if (f.mode === "add") {
+    const created = await BackendAgentApi.create({
+      party_type: f.partyType, account_number: accountNumber, display_name: displayName, phone,
+      zone_code: f.zoneCode, login_identifier: f.loginIdentifier.trim(), password: f.password,
+    });
+    if (created.status === 401) { handleApiUnauthorized(); return; }
+    if (!created.ok) { f.submitting = false; f.error = describeApiError(created); render(); return; }
+  } else {
+    const updated = await BackendAgentApi.update(f.editingAgentId, { display_name: displayName, phone, account_number: accountNumber });
+    if (updated.status === 401) { handleApiUnauthorized(); return; }
+    if (!updated.ok) { f.submitting = false; f.error = describeApiError(updated); render(); return; }
+  }
+  state.admin.modules.agentsBackend.agentForm.open = false;
+  await loadAgentsBackendFromBackend();
+}
+async function toggleAgentBackendStatus(agentId) {
+  if (!currentAccountHasAdminActionPermission("admin.action.agentsBackend.manage")) return;
+  const a = findAgentBackendById(agentId);
+  if (!a) return;
+  const badge = agentBackendLifecycleBadge(a.status);
+  const result = badge.isActive ? await BackendAgentApi.deactivate(agentId) : await BackendAgentApi.activate(agentId);
+  if (result.status === 401) { handleApiUnauthorized(); return; }
+  if (!result.ok) {
+    state.admin.modules.agentsBackend.notice = describeApiError(result);
+    render();
+    return;
+  }
+  await loadAgentsBackendFromBackend();
+}
+
 const ADMIN_PROVIDER_FORM_FIELDS_INFO = [
   { id: "provf-name", key: "name", label: "اسم المزوّد", type: "text", required: true, placeholder: "مثال: مزوّد الشحن الرقمي" },
   { id: "provf-type", key: "type", label: "النوع", type: "select", options: [] }, // built fresh per render from PROVIDER_TYPES, see below
@@ -36816,6 +37174,7 @@ const ADMIN_MODULE_RENDERERS = {
   agents: AdminAgentsModuleHTML,
   customers: AdminCustomersModuleHTML,
   providers: AdminProvidersModuleHTML,
+  agentsBackend: AdminAgentsBackendModuleHTML,
   telecomCompanies: AdminTelecomCompaniesModuleHTML,
   wifi: AdminWifiModuleHTML,
   games: AdminGamesModuleHTML,
@@ -37059,18 +37418,46 @@ function attachEvents() {
     const backendResult = await BackendAuth.login(loginIdentifier, password);
 
     if (backendResult.ok) {
-      const result = {
-        success: true,
-        role: "administrator",
-        account: { accountId: "backend:" + loginIdentifier, loginIdentifier, role: "administrator", status: "active", linkedEntityId: null },
-        entity: { id: null, displayName: loginIdentifier, status: "active" },
-      };
-      completeLoginForAccount(result);
+      // PHASE: AGENT + WALLET/BALANCE + EXISTING TRANSACTION V1 — a real
+      // backend login can now be EITHER an Admin identity (holds a role)
+      // OR an ownership-only identity such as an Agent (holds none).
+      // GET /api/v1/auth/me is the one call that tells the two apart
+      // (see its own doc comment); the access token must be set BEFORE
+      // calling it, since it is itself a protected route.
       state.session.accessToken = backendResult.data.access_token;
       state.session.refreshToken = backendResult.data.refresh_token;
+      const me = await BackendAuthApi.me();
+      if (!me.ok) {
+        // Fail closed, never guess which identity this is — the caller
+        // simply retries login.
+        state.session.accessToken = null;
+        state.session.refreshToken = null;
+        lf.submitting = false;
+        lf.error = describeApiError(me);
+        render();
+        return;
+      }
+      if (me.data.roles && me.data.roles.length > 0) {
+        const result = {
+          success: true,
+          role: "administrator",
+          account: { accountId: "backend:" + loginIdentifier, loginIdentifier, role: "administrator", status: "active", linkedEntityId: null },
+          entity: { id: null, displayName: loginIdentifier, status: "active" },
+        };
+        completeLoginForAccount(result);
+      } else {
+        // An ownership-only real identity (e.g. Agent) — no Admin Panel
+        // to enter; lands on its own "My Wallet" home instead.
+        state.session.isAuthenticated = true;
+        state.session.role = "agentBackend";
+        state.session.backendPartyId = me.data.party_id;
+        state.session.loginForm = { loginIdentifier: "", password: "", error: null, submitting: false };
+        state.app.currentScreen = "myWalletHome";
+      }
       state.session.loginForm.submitting = false;
       persistAuthState();
       render();
+      if (me.data.roles && me.data.roles.length === 0) loadMyWalletBalance();
       return;
     }
 
@@ -37179,6 +37566,14 @@ function attachEvents() {
     state.app.currentScreen = "workspaceSelect";
     render();
   };
+  // PHASE: AGENT + WALLET/BALANCE + EXISTING TRANSACTION V1 — "My Wallet" home.
+  if ($("btn-my-wallet-logout")) $("btn-my-wallet-logout").onclick = () => {
+    state.session = freshSessionState();
+    state.app.currentScreen = "login";
+    persistAuthState();
+    render();
+  };
+  if ($("btn-my-wallet-refresh")) $("btn-my-wallet-refresh").onclick = () => loadMyWalletBalance();
   // Add Customer entry point (Phase 8h correction) — calls the exact
   // same openAddCustomerForm() Admin/Agent already call; the resulting
   // dialog's own field/save/close handlers (.ucm-form-field,
@@ -37930,6 +38325,11 @@ function attachEvents() {
         state.admin.modules.providers.selectedProviderId = null;
         state.admin.modules.providers.mappingsWorkspace = { providerId: null, packageId: "" };
         loadProvidersFromBackend();
+      }
+      // PHASE: AGENT + WALLET/BALANCE + EXISTING TRANSACTION V1 — same
+      // "fresh entry always refetches from the real backend" discipline.
+      if (moduleId === "agentsBackend") {
+        loadAgentsBackendFromBackend();
       }
     };
   });
@@ -39210,9 +39610,11 @@ function attachEvents() {
       const ga = state.admin.modules.games.assets;
       const gt = state.admin.modules.games.templates;
       const pv = state.admin.modules.providers;
+      const av = state.admin.modules.agentsBackend;
       const targetForm = pv.accountForm.open ? pv.accountForm
         : pv.secretRefForm.open ? pv.secretRefForm
         : pv.mappingForm.open ? pv.mappingForm
+        : av.agentForm.open ? av.agentForm
         : tc.companyForm.open ? tc.companyForm
         : tc.packageForm.open ? tc.packageForm
         : tc.categoryManager.form.open ? tc.categoryManager.form
@@ -39301,6 +39703,7 @@ function attachEvents() {
       state.admin.modules.providers.accountForm.open = false;
       state.admin.modules.providers.secretRefForm.open = false;
       state.admin.modules.providers.mappingForm.open = false;
+      state.admin.modules.agentsBackend.agentForm.open = false;
       state.ownerWorkspace.createNetworkForm.open = false;
       state.admin.modules.operations.groupsView.groupForm.open = false;
       state.admin.modules.operations.routingView.ruleForm.open = false;
@@ -39533,6 +39936,21 @@ function attachEvents() {
     render();
   };
   if ($("btn-admin-provider-form-save")) $("btn-admin-provider-form-save").onclick = () => saveProviderForm();
+
+  /* ── Agent Admin (real backend) — PHASE: AGENT + WALLET/BALANCE + EXISTING TRANSACTION V1 ── */
+  if ($("btn-admin-agent-backend-add")) $("btn-admin-agent-backend-add").onclick = () => openAddAgentBackendForm();
+  document.querySelectorAll(".admin-agent-backend-edit").forEach((btn) => {
+    btn.onclick = () => openEditAgentBackendForm(btn.getAttribute("data-agent-id"));
+  });
+  document.querySelectorAll(".admin-agent-backend-toggle").forEach((btn) => {
+    btn.onclick = () => toggleAgentBackendStatus(btn.getAttribute("data-agent-id"));
+  });
+  if ($("btn-admin-agent-backend-form-cancel")) $("btn-admin-agent-backend-form-cancel").onclick = () => {
+    state.admin.modules.agentsBackend.agentForm.open = false;
+    render();
+  };
+  if ($("btn-admin-agent-backend-form-save")) $("btn-admin-agent-backend-form-save").onclick = () => saveAgentBackendForm();
+  if ($("btn-admin-agents-backend-retry")) $("btn-admin-agents-backend-retry").onclick = () => loadAgentsBackendFromBackend();
 
   /* ── Provider Account Admin (Phase 1) ── */
   document.querySelectorAll(".admin-provider-accounts").forEach((btn) => {
@@ -41938,6 +42356,17 @@ if (!hasAdministratorAccount()) {
   // (or nothing) instead of the real backend's current state (§16).
   if (state.app.currentScreen === "adminPanel" && getSafeActiveAdminModuleId() === "providers" && state.session.accessToken) {
     loadProvidersFromBackend();
+  }
+  // PHASE: AGENT + WALLET/BALANCE + EXISTING TRANSACTION V1 — same reload
+  // discipline as Providers immediately above.
+  if (state.app.currentScreen === "adminPanel" && getSafeActiveAdminModuleId() === "agentsBackend" && state.session.accessToken) {
+    loadAgentsBackendFromBackend();
+  }
+  // "My Wallet" home — a reload landing directly here (persisted
+  // currentScreen) never went through the login handler's own
+  // loadMyWalletBalance() call above, so it is triggered once here too.
+  if (state.app.currentScreen === "myWalletHome" && state.session.accessToken) {
+    loadMyWalletBalance();
   }
 }
 
