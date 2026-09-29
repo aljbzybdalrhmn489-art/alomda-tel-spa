@@ -1,0 +1,17 @@
+# backend/ is its own separate git repository — never tracked from here.
+backend/
+
+# Pre-existing bulk archive/documentation artifacts, unrelated to the SPA
+# integration work tracked in this repository.
+ALOMDA TEL.zip
+AlomdaTel DOCX/
+
+# E2E (Playwright) — dependencies and generated run artifacts only.
+e2e/node_modules/
+e2e/test-results/
+e2e/playwright-report/
+e2e/*.log
+
+# Claude Code's own local tooling directory — not project content.
+.claude/
+

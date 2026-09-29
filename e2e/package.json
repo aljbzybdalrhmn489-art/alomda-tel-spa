@@ -1,0 +1,12 @@
+{
+  "name": "alomda-tel-spa-e2e",
+  "version": "0.0.0",
+  "private": true,
+  "description": "SPA ↔ Backend Integration V1 — Playwright E2E for spa_app-175.html against the real backend.",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.48.2"
+  }
+}
