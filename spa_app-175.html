@@ -1011,6 +1011,7 @@ const ADMIN_NAV_ITEMS = [
   { id: "agentsBackend", label: "الوكلاء (النظام الفعلي)", icon: "Users", description: "إدارة الوكلاء عبر الخادم الفعلي (حساب دخول + رصيد مشتق من دفتر الأستاذ)" },
   { id: "servicesBackend", label: "الخدمات (النظام الفعلي)", icon: "Layers", description: "إدارة كتالوج الخدمات عبر الخادم الفعلي (Service Authority): الكود، استراتيجية التنفيذ، الحجز، والحالة" },
   { id: "transactionsBackend", label: "المعاملات (النظام الفعلي)", icon: "Receipt", description: "إنشاء ومتابعة معاملات حقيقية عبر الخادم: الحالة، الجدول الزمني، وحجز المبلغ" },
+  { id: "operationsBackend", label: "العمليات — النظام الفعلي", icon: "Receipt", description: "طلبات الخدمة والموظفون والمجموعات عبر الخادم (التوزيع والحالة يحددهما الخادم)" },
   { id: "telecomCompanies", label: "شركات الاتصالات", icon: "RadioTower", description: "إدارة شركات الاتصالات وباقاتها ومنتجاتها" },
   { id: "wifi", label: "الواي فاي", icon: "Wifi", description: "إدارة منظومة الواي فاي: ملاك الشبكات، الشبكات، والمخزون" },
   { id: "games", label: "الألعاب", icon: "Gamepad2", description: "إدارة كتالوج الألعاب والمنتجات الرقمية" },
@@ -4823,6 +4824,38 @@ function rtx() {
   if (!state.session.realTransactions) state.session.realTransactions = freshRealTransactionsState();
   return state.session.realTransactions;
 }
+
+/**
+ * REAL OPERATIONS V1 — `operations-routes.ts`, exactly the routes that exist; same ApiClient, one wrapper per route.
+ * Nothing here retries and nothing hides a 403/409: callers show them. No fulfillment strategy, price, amount,
+ * gateway or provider is ever sent. createServiceRequest is only a wrapper (nothing calls it automatically; linking a
+ * ServiceRequest to a Transaction is a separate, later decision).
+ */
+const BackendOperationsApi = {
+  // ADMIN (operation:employee_manage)
+  listEmployees() { return ApiClient.get("/api/v1/admin/operations/employees"); },
+  getEmployee(partyId) { return ApiClient.get("/api/v1/admin/operations/employees/" + encodeURIComponent(partyId)); },
+  createEmployeeProfile(payload) { return ApiClient.post("/api/v1/admin/operations/employees", payload); },
+  updateEmployeeProfile(partyId, patch) { return ApiClient.patch("/api/v1/admin/operations/employees/" + encodeURIComponent(partyId), patch); },
+  archiveEmployee(partyId) { return ApiClient.post("/api/v1/admin/operations/employees/" + encodeURIComponent(partyId) + "/archive", undefined); },
+  unarchiveEmployee(partyId) { return ApiClient.post("/api/v1/admin/operations/employees/" + encodeURIComponent(partyId) + "/unarchive", undefined); },
+  listGroups() { return ApiClient.get("/api/v1/admin/operations/groups"); },
+  createGroup(payload) { return ApiClient.post("/api/v1/admin/operations/groups", payload); },
+  addGroupMember(groupId, partyId) { return ApiClient.post("/api/v1/admin/operations/groups/" + encodeURIComponent(groupId) + "/members", { party_id: partyId }); },
+  removeGroupMember(groupId, partyId) { return ApiClient.post("/api/v1/admin/operations/groups/" + encodeURIComponent(groupId) + "/members/" + encodeURIComponent(partyId) + "/remove", undefined); },
+  // SELF (ownership-based) and the permission-gated overrides noted per route
+  setAvailability(availability) { return ApiClient.post("/api/v1/operations/my/availability", { availability }); },
+  createServiceRequest(payload) { return ApiClient.post("/api/v1/operations/service-requests", payload); },
+  listServiceRequests(scope) { return ApiClient.get("/api/v1/operations/service-requests" + (scope === "all" ? "?scope=all" : "")); }, // scope=all needs operation:read_all
+  getServiceRequest(id) { return ApiClient.get("/api/v1/operations/service-requests/" + encodeURIComponent(id)); },
+  cancelServiceRequest(id, reason) { return ApiClient.post("/api/v1/operations/service-requests/" + encodeURIComponent(id) + "/cancel", reason ? { reason } : {}); }, // owner or operation:cancel_any
+  dispatchServiceRequest(id) { return ApiClient.post("/api/v1/operations/service-requests/" + encodeURIComponent(id) + "/dispatch", undefined); }, // operation:dispatch
+  listMyServiceRequests() { return ApiClient.get("/api/v1/operations/my/service-requests"); },
+  listMyOffers() { return ApiClient.get("/api/v1/operations/my/offers"); },
+  claimOffer(offerId) { return ApiClient.post("/api/v1/operations/offers/" + encodeURIComponent(offerId) + "/claim", undefined); },
+  startServiceRequest(id) { return ApiClient.post("/api/v1/operations/service-requests/" + encodeURIComponent(id) + "/start", undefined); },
+  completeServiceRequest(id) { return ApiClient.post("/api/v1/operations/service-requests/" + encodeURIComponent(id) + "/complete", undefined); },
+};
 
 /**
  * AGENT_BACKEND_DIRECTORY — the real-backend counterpart's own local
@@ -17887,6 +17920,8 @@ function freshSessionState() {
     myWallet: { loading: false, error: null, currency: "YER", data: null },
     // REAL TRANSACTIONS V1 — in-memory only (see persistAuthState): a reload always refetches.
     realTransactions: freshRealTransactionsState(),
+    // REAL OPERATIONS V1 — in-memory only (never persisted).
+    realOperations: freshRealOperationsState(),
   };
 }
 /** Fixes a real regression: state.admin.modules.wifi.networksWorkspace
@@ -18034,7 +18069,7 @@ function persistAuthState() {
   // PHASE: AGENT + WALLET/BALANCE + EXISTING TRANSACTION V1 — `myWallet`
   // is excluded too: a cached balance is exactly the kind of "stale data
   // presented as fresh" §16 forbids. A reload always refetches it live.
-  const persistable = Object.assign({}, state.session, { refreshToken: null, myWallet: { loading: false, error: null, currency: "YER", data: null }, realTransactions: freshRealTransactionsState() });
+  const persistable = Object.assign({}, state.session, { refreshToken: null, myWallet: { loading: false, error: null, currency: "YER", data: null }, realTransactions: freshRealTransactionsState(), realOperations: freshRealOperationsState() });
   PersistenceStore.save("session", persistable);
 }
 /**
@@ -19986,6 +20021,8 @@ function render() {
     root.innerHTML = renderUnifiedLoginScreen();
   } else if (state.app.currentScreen === "workspaceSelect") {
     root.innerHTML = renderWorkspaceSelectScreen();
+  } else if (state.app.currentScreen === "realEmployeeWorkspace") {
+    root.innerHTML = renderRealEmployeeWorkspaceScreen();
   } else if (state.app.currentScreen === "myWalletHome") {
     root.innerHTML = renderMyWalletHomeScreen();
   } else if (state.app.currentScreen === "dashboard") {
@@ -30638,6 +30675,578 @@ function bindRealTransactionsEvents() {
   });
 }
 
+/* ════════════════════════════════════════════════════════════════════
+   REAL OPERATIONS V1 — PHASE 1: admin shell + employee workspace foundation.
+   Talks ONLY to the real backend (BackendOperationsApi). It is completely
+   separate from the local MOCK Operations (SERVICE_REQUEST_DIRECTORY,
+   SERVICE_REQUEST_OFFER_DIRECTORY, EMPLOYEE_DIRECTORY, the 1-second local
+   expiry/redispatch timer, dispatchServiceRequest*, submitManualServicePurchase,
+   the mock Employee Workspace): nothing below reads or writes them, and the
+   local engine is never run on real data. The backend owns every state
+   transition, the dispatch choice, offers, expiry, concurrency and
+   authorization; this file only calls routes, shows the answer verbatim and
+   refetches after any conflict. No accounting, hold, settlement or provider
+   logic exists here, and no transaction is created from Operations.
+   Employee identity: the ONE decision point is routeRealRoleLessIdentity()
+   (login + boot), fed by GET /api/v1/auth/me's employee_profile.
+   ════════════════════════════════════════════════════════════════════ */
+const ROPS_AR = "font-family:'IBM Plex Sans Arabic',sans-serif;";
+const ROPS_CAIRO = "font-family:Cairo,sans-serif;";
+
+// The seven REAL ServiceRequest states, shown verbatim. NOT the old mock vocabulary
+// (new/assigned/inProgress/editRequested/completed/cancelled/transferred/timedOut).
+const REAL_SERVICE_REQUEST_STATUS_META = {
+  CREATED: { label: "تم الإنشاء", color: "#8FA3BF" },
+  DISPATCHABLE: { label: "جاهز للتوزيع", color: "#6FA8DC" },
+  OFFERED: { label: "معروض على موظف", color: "#E0923C" },
+  ASSIGNED: { label: "مُسنَد", color: "#C9A44C" },
+  IN_PROGRESS: { label: "قيد التنفيذ", color: "#E0923C" },
+  COMPLETED: { label: "مكتمل", color: "#5FBF8F" },
+  CANCELLED: { label: "ملغى", color: "#E0667A" },
+};
+// UX hint only (mirrors the backend's cancellable set); the backend decides and a 403/409 is always shown.
+const REAL_SERVICE_REQUEST_CANCELLABLE = ["CREATED", "DISPATCHABLE", "OFFERED", "ASSIGNED", "IN_PROGRESS"];
+
+function realServiceRequestStatusBadgeHTML(status) {
+  const meta = REAL_SERVICE_REQUEST_STATUS_META[status] || { label: escapeHtml(String(status)), color: "#8A8A8A" };
+  return '<span class="rops-status" data-status="' + escapeHtml(String(status)) + '">' + AdminTableBadgeHTML(meta.label, meta.color) +
+    ' <span style="direction:ltr;unicode-bidi:embed;' + ROPS_CAIRO + 'font-size:10px;color:' + C.textFaint + ';">' + escapeHtml(String(status)) + '</span></span>';
+}
+
+// Explicit Backend DTO -> SPA view model mappings. Only fields the backend really returns; nothing is invented
+// (no form_values, history, version, actor, reason or assigned_at: the backend does not return them).
+function mapRealServiceRequest(dto) {
+  return {
+    id: dto.id,
+    partyId: dto.party_id,
+    serviceType: dto.service_type,
+    targetIdentifier: dto.target_identifier,
+    isVip: dto.is_vip === true,
+    status: dto.status,
+    assignedEmployeePartyId: dto.assigned_employee_party_id,
+    employeeGroupId: dto.employee_group_id,
+    transactionId: dto.transaction_id,
+    createdAt: dto.created_at,
+    updatedAt: dto.updated_at,
+  };
+}
+function mapRealEmployeeProfile(dto) {
+  return {
+    partyId: dto.party_id,
+    availability: dto.availability,
+    maxConcurrentRequests: dto.max_concurrent_requests,
+    allowedServiceTypes: Array.isArray(dto.allowed_service_types) ? dto.allowed_service_types.slice() : [],
+    isArchived: dto.is_archived === true,
+  };
+}
+function mapRealEmployeeGroup(dto) {
+  return { id: dto.id, name: dto.name, description: dto.description, isActive: dto.is_active === true };
+}
+function mapRealOffer(dto) {
+  return { id: dto.id, serviceRequestId: dto.service_request_id, offeredAt: dto.offered_at, expiresAt: dto.expires_at };
+}
+
+/** The real Operations state (in state.session, so every logout clears it; never persisted). */
+function freshRealOperationsState() {
+  const listState = () => ({ loading: false, loaded: false, error: null, items: [] });
+  return {
+    tab: "requests", // "requests" | "employees" | "groups"
+    requests: Object.assign(listState(), { notice: null, busyId: null }),
+    detail: { id: null, loading: false, error: null, item: null, cancelConfirm: false, cancelReason: "" },
+    employees: Object.assign(listState(), { notice: null, form: { open: false, mode: "add", partyId: "", maxConcurrent: "3", allowedTypes: "", submitting: false, error: null } }),
+    groups: Object.assign(listState(), {
+      notice: null,
+      form: { open: false, name: "", description: "", submitting: false, error: null },
+      member: { groupId: "", partyId: "", submitting: false, error: null },
+    }),
+    employee: { profile: null, notice: null, availabilityBusy: false, offers: listState(), requests: listState() },
+  };
+}
+function rops() {
+  if (!state.session.realOperations) state.session.realOperations = freshRealOperationsState();
+  return state.session.realOperations;
+}
+
+/** One honest message per failure class (403/409 are never hidden); 401 is handled by the caller. */
+function describeRealOperationsError(result) {
+  if (result.networkError || result.status === 401 || result.status === 403) return describeApiError(result);
+  let prefix = "";
+  if (result.status === 409) prefix = "تغيّرت حالة العنصر أو حدث تعارض مع طلب آخر — تم تحديث البيانات. ";
+  else if (result.status === 404) prefix = "غير موجود أو غير مسموح بالاطلاع عليه. ";
+  else if (result.status === 400) prefix = "بيانات غير صالحة. ";
+  else if (result.status >= 500) prefix = "خطأ في الخادم. ";
+  return prefix + describeApiError(result);
+}
+function realOpsTime(iso) {
+  return typeof iso === "string" ? escapeHtml(iso.slice(0, 19).replace("T", " ")) : "";
+}
+
+// ---------------------------------------------------------------- Employee identity (single decision point) ---
+function isActiveRealEmployeeProfile(profile) {
+  return !!profile && profile.is_archived === false;
+}
+/**
+ * The ONE place a role-less real identity is classified: an Employee (an active operational profile in
+ * GET /auth/me) goes to the real Employee Workspace; anyone else keeps the existing My Wallet home.
+ * Used by the login handler and by the boot refresh; never duplicated.
+ */
+function routeRealRoleLessIdentity(meData) {
+  state.session.isAuthenticated = true;
+  state.session.backendPartyId = meData.party_id;
+  state.session.loginForm = { loginIdentifier: "", password: "", error: null, submitting: false };
+  if (isActiveRealEmployeeProfile(meData.employee_profile)) {
+    state.session.role = "employeeBackend";
+    rops().employee.profile = mapRealEmployeeProfile(Object.assign({ party_id: meData.party_id }, meData.employee_profile));
+    state.app.currentScreen = "realEmployeeWorkspace";
+  } else {
+    state.session.role = "agentBackend";
+    state.app.currentScreen = "myWalletHome";
+  }
+}
+/** What to fetch after a role-less identity was routed. */
+function loadRealIdentityHomeData() {
+  if (state.app.currentScreen === "realEmployeeWorkspace") {
+    loadRealEmployeeOffers();
+    loadRealEmployeeRequests();
+  } else {
+    loadMyWalletBalance();
+    loadRealTransactionsList();
+  }
+}
+/** Boot: the persisted session only remembers the role; the identity (and so the screen) always comes from the backend again. */
+async function refreshRealRoleLessIdentityOnBoot() {
+  const me = await BackendAuthApi.me();
+  if (me.status === 401) { handleApiUnauthorized(); return; }
+  if (!me.ok) { rops().employee.notice = describeRealOperationsError(me); render(); return; }
+  if (me.data.roles && me.data.roles.length > 0) return; // an admin identity never lands here
+  routeRealRoleLessIdentity(me.data);
+  persistAuthState();
+  render();
+  loadRealIdentityHomeData();
+}
+
+// ---------------------------------------------------------------- Admin: Requests ---
+async function loadRealOpsRequests() {
+  const r = rops().requests;
+  r.loading = true; r.error = null;
+  render();
+  const result = await BackendOperationsApi.listServiceRequests("all");
+  r.loading = false;
+  if (result.status === 401) { handleApiUnauthorized(); return; }
+  if (!result.ok) { r.error = describeRealOperationsError(result); r.items = []; r.loaded = true; render(); return; }
+  r.items = result.data.map(mapRealServiceRequest);
+  r.loaded = true;
+  render();
+}
+async function openRealOpsRequestDetail(id, options) {
+  const d = rops().detail;
+  Object.assign(d, { id, loading: true, error: null, item: null, cancelConfirm: !!(options && options.cancelConfirm), cancelReason: "" });
+  render();
+  const result = await BackendOperationsApi.getServiceRequest(id);
+  if (result.status === 401) { handleApiUnauthorized(); return; }
+  d.loading = false;
+  if (!result.ok) { d.error = describeRealOperationsError(result); render(); return; }
+  d.item = mapRealServiceRequest(result.data);
+  render();
+}
+function closeRealOpsRequestDetail() {
+  rops().detail = freshRealOperationsState().detail;
+  render();
+}
+/** Dispatch: the backend picks the employee. No local eligibility, strategy or retry. */
+async function dispatchRealOpsRequest(id) {
+  const r = rops().requests;
+  if (r.busyId) return;
+  r.busyId = id; r.notice = null;
+  render();
+  const result = await BackendOperationsApi.dispatchServiceRequest(id);
+  r.busyId = null;
+  if (result.status === 401) { handleApiUnauthorized(); return; }
+  if (!result.ok) {
+    r.notice = describeRealOperationsError(result);
+    render();
+    if (result.status === 409) { loadRealOpsRequests(); if (rops().detail.id === id) openRealOpsRequestDetail(id); }
+    return;
+  }
+  r.notice = result.data && result.data.offered === true
+    ? "تم عرض الطلب على موظف مؤهل (اختاره الخادم)."
+    : "لا يوجد موظف مؤهل حالياً — بقي الطلب في حالة DISPATCHABLE.";
+  render();
+  loadRealOpsRequests();
+  if (rops().detail.id === id) openRealOpsRequestDetail(id);
+}
+async function cancelRealOpsRequest() {
+  const d = rops().detail;
+  const r = rops().requests;
+  if (!d.id || r.busyId) return;
+  const id = d.id;
+  r.busyId = id; r.notice = null;
+  render();
+  const reason = d.cancelReason.trim();
+  const result = await BackendOperationsApi.cancelServiceRequest(id, reason ? reason : null);
+  r.busyId = null;
+  if (result.status === 401) { handleApiUnauthorized(); return; }
+  if (!result.ok) {
+    r.notice = describeRealOperationsError(result);
+    d.cancelConfirm = false;
+    render();
+    if (result.status === 409) { loadRealOpsRequests(); openRealOpsRequestDetail(id); }
+    return;
+  }
+  r.notice = "تم إلغاء الطلب.";
+  render();
+  loadRealOpsRequests();
+  openRealOpsRequestDetail(id);
+}
+function RealOpsRequestsTabHTML(theme) {
+  const r = rops().requests;
+  let body;
+  if (r.loading && !r.loaded) body = '<div id="rops-loading" style="padding:20px 0;text-align:center;' + ROPS_AR + 'font-size:12px;color:' + C.textFaint + ';">جارٍ تحميل الطلبات من الخادم…</div>';
+  else if (r.error) body = '<div id="rops-error" style="padding:14px;border-radius:12px;background:' + C.dangerSoft + ';' + ROPS_AR + 'font-size:12.5px;color:' + C.danger + ';">' + escapeHtml(r.error) +
+    '<div style="margin-top:8px;"><button id="btn-rops-requests-retry" style="padding:7px 14px;border-radius:9px;border:1px solid ' + C.danger + ';background:transparent;color:' + C.danger + ';cursor:pointer;' + ROPS_CAIRO + 'font-weight:700;font-size:12px;">إعادة المحاولة</button></div></div>';
+  else if (r.items.length === 0) body = '<div id="rops-empty-requests" style="padding:20px 0;text-align:center;' + ROPS_AR + 'font-size:12px;color:' + C.textGhost + ';">لا توجد طلبات على الخادم</div>';
+  else body = r.items.map((x) => {
+    const busy = r.busyId === x.id;
+    const btn = (cls, label) => '<button class="' + cls + '" data-request-id="' + escapeHtml(x.id) + '" ' + (busy ? 'disabled ' : '') + 'style="padding:5px 10px;border-radius:8px;cursor:pointer;background:rgba(255,255,255,0.05);border:1px solid ' + C.glassBorder + ';color:' + C.textDim + ';' + ROPS_CAIRO + 'font-weight:700;font-size:11px;">' + label + '</button>';
+    return '<div class="rops-req-row" data-request-id="' + escapeHtml(x.id) + '" data-status="' + escapeHtml(String(x.status)) + '" style="padding:10px 0;border-top:1px solid ' + C.glassBorder + ';' + ROPS_AR + 'font-size:11.5px;color:' + C.text + ';">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;"><span style="direction:ltr;unicode-bidi:embed;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(x.id) + '</span>' + realServiceRequestStatusBadgeHTML(x.status) + '</div>' +
+      '<div style="margin-top:4px;color:' + C.textFaint + ';line-height:1.7;">service_type: <b>' + escapeHtml(String(x.serviceType)) + '</b> · party: ' + escapeHtml(String(x.partyId)) +
+        ' · موظف: ' + (x.assignedEmployeePartyId ? escapeHtml(String(x.assignedEmployeePartyId)) : "—") +
+        ' · transaction: ' + (x.transactionId ? escapeHtml(String(x.transactionId)) : "—") + '<br>' + realOpsTime(x.createdAt) + ' → ' + realOpsTime(x.updatedAt) + '</div>' +
+      '<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">' + btn("rops-open", "التفاصيل") +
+        (x.status === "DISPATCHABLE" ? btn("rops-dispatch", "توزيع (Dispatch)") : "") +
+        (REAL_SERVICE_REQUEST_CANCELLABLE.indexOf(x.status) >= 0 ? btn("rops-cancel", "إلغاء") : "") + '</div>' +
+    '</div>';
+  }).join("");
+  const notice = r.notice ? '<div id="rops-notice" style="margin-bottom:10px;padding:10px 14px;border-radius:11px;background:' + theme.soft + ';' + ROPS_AR + 'font-size:12px;color:' + C.text + ';">' + escapeHtml(r.notice) + '</div>' : "";
+  return notice +
+    '<div style="display:flex;justify-content:flex-end;margin-bottom:6px;"><button id="btn-rops-requests-refresh" style="padding:6px 12px;border-radius:9px;cursor:pointer;background:rgba(255,255,255,0.05);border:1px solid ' + C.glassBorder + ';color:' + C.textDim + ';' + ROPS_CAIRO + 'font-weight:700;font-size:11px;">تحديث</button></div>' +
+    '<div id="rops-requests-list">' + body + '</div>' + RealOpsRequestDetailHTML(theme);
+}
+function RealOpsRequestDetailHTML(theme) {
+  const d = rops().detail;
+  if (!d.id) return "";
+  const box = (inner) => '<div id="rops-detail" data-request-id="' + escapeHtml(d.id) + '" style="margin-top:14px;padding:14px;border-radius:14px;border:1px solid ' + C.glassBorder + ';background:rgba(255,255,255,0.02);' + ROPS_AR + 'font-size:12px;color:' + C.text + ';">' + inner + '</div>';
+  const closeBtn = '<button id="btn-rops-detail-close" style="padding:5px 12px;border-radius:9px;cursor:pointer;background:rgba(255,255,255,0.05);border:1px solid ' + C.glassBorder + ';color:' + C.textDim + ';font-size:11px;">إغلاق</button>';
+  if (d.loading) return box("جارٍ تحميل الطلب…");
+  if (d.error) return box('<div id="rops-detail-error" style="color:' + C.danger + ';">' + escapeHtml(d.error) + '</div><div style="margin-top:8px;">' + closeBtn + '</div>');
+  const x = d.item;
+  const row = (label, value) => '<div style="display:flex;gap:8px;justify-content:space-between;padding:4px 0;"><span style="color:' + C.textDim + ';">' + label + '</span><span style="direction:ltr;unicode-bidi:embed;text-align:left;">' + value + '</span></div>';
+  const cancelBox = d.cancelConfirm
+    ? '<div id="rops-cancel-box" style="margin-top:10px;padding:10px;border-radius:10px;background:' + C.dangerSoft + ';">' +
+        '<div style="color:' + C.danger + ';margin-bottom:6px;">تأكيد الإلغاء — إذا كان الطلب مرتبطاً بمعاملة يدوية فسيتولى الخادم إنهاءها وتحرير الحجز.</div>' +
+        '<input id="rops-cancel-reason" class="rops-input" data-path="detail.cancelReason" value="' + escapeHtml(d.cancelReason) + '" placeholder="السبب (اختياري)" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.03);border:1px solid ' + C.glassBorder + ';border-radius:9px;padding:8px 12px;color:' + C.text + ';outline:none;' + ROPS_CAIRO + 'font-size:12.5px;" />' +
+        '<button id="btn-rops-cancel-confirm" style="margin-top:8px;padding:7px 14px;border-radius:9px;border:none;cursor:pointer;background:' + C.danger + ';color:#fff;' + ROPS_CAIRO + 'font-weight:700;font-size:12px;">تأكيد الإلغاء</button></div>'
+    : "";
+  return box(
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;"><span style="' + ROPS_CAIRO + 'font-weight:800;font-size:14px;">تفاصيل الطلب</span>' + closeBtn + '</div>' +
+    row("id", escapeHtml(x.id)) + row("الحالة", realServiceRequestStatusBadgeHTML(x.status)) + row("service_type", escapeHtml(String(x.serviceType))) +
+    row("target_identifier", x.targetIdentifier === null ? "—" : escapeHtml(String(x.targetIdentifier))) + row("party_id", escapeHtml(String(x.partyId))) +
+    row("is_vip", x.isVip ? "true" : "false") + row("الموظف المُسنَد", x.assignedEmployeePartyId ? escapeHtml(String(x.assignedEmployeePartyId)) : "—") +
+    row("employee_group_id", x.employeeGroupId ? escapeHtml(String(x.employeeGroupId)) : "—") + row("transaction_id", x.transactionId ? escapeHtml(String(x.transactionId)) : "—") +
+    row("created_at", realOpsTime(x.createdAt)) + row("updated_at", realOpsTime(x.updatedAt)) + cancelBox
+  );
+}
+
+// ---------------------------------------------------------------- Admin: Employee operational profiles ---
+async function loadRealOpsEmployees() {
+  const e = rops().employees;
+  e.loading = true; e.error = null;
+  render();
+  const result = await BackendOperationsApi.listEmployees();
+  e.loading = false;
+  if (result.status === 401) { handleApiUnauthorized(); return; }
+  if (!result.ok) { e.error = describeRealOperationsError(result); e.items = []; e.loaded = true; render(); return; }
+  e.items = result.data.map(mapRealEmployeeProfile);
+  e.loaded = true;
+  render();
+}
+function openRealOpsEmployeeForm(mode, partyId) {
+  const e = rops().employees;
+  const existing = mode === "edit" ? e.items.find((x) => x.partyId === partyId) : null;
+  e.form = {
+    open: true, mode, partyId: existing ? existing.partyId : "",
+    maxConcurrent: existing ? String(existing.maxConcurrentRequests) : "3",
+    allowedTypes: existing ? existing.allowedServiceTypes.join(", ") : "",
+    submitting: false, error: null,
+  };
+  render();
+}
+async function saveRealOpsEmployeeForm() {
+  const e = rops().employees;
+  const f = e.form;
+  if (f.submitting) return;
+  const partyId = f.partyId.trim();
+  const max = Number(f.maxConcurrent);
+  const types = f.allowedTypes.split(",").map((t) => t.trim()).filter((t) => t.length > 0);
+  if ((f.mode === "add" && !partyId) || !Number.isInteger(max) || max <= 0) { f.error = "معرّف الطرف مطلوب وعدد الطلبات المتزامنة يجب أن يكون عدداً صحيحاً موجباً"; render(); return; }
+  f.submitting = true; f.error = null;
+  render();
+  const result = f.mode === "add"
+    ? await BackendOperationsApi.createEmployeeProfile({ party_id: partyId, max_concurrent_requests: max, allowed_service_types: types })
+    : await BackendOperationsApi.updateEmployeeProfile(partyId, { max_concurrent_requests: max, allowed_service_types: types });
+  if (result.status === 401) { handleApiUnauthorized(); return; }
+  if (!result.ok) { f.submitting = false; f.error = describeRealOperationsError(result); render(); return; }
+  e.form = freshRealOperationsState().employees.form;
+  e.notice = f.mode === "add" ? "تم إنشاء الملف التشغيلي." : "تم حفظ الملف التشغيلي.";
+  await loadRealOpsEmployees();
+}
+async function toggleRealOpsEmployeeArchive(partyId, archive) {
+  const e = rops().employees;
+  e.notice = null;
+  const result = archive ? await BackendOperationsApi.archiveEmployee(partyId) : await BackendOperationsApi.unarchiveEmployee(partyId);
+  if (result.status === 401) { handleApiUnauthorized(); return; }
+  if (!result.ok) { e.notice = describeRealOperationsError(result); render(); if (result.status === 409) loadRealOpsEmployees(); return; }
+  await loadRealOpsEmployees();
+}
+function RealOpsEmployeesTabHTML(theme) {
+  const e = rops().employees;
+  const inputStyle = 'width:100%;box-sizing:border-box;background:rgba(255,255,255,0.03);border:1px solid ' + C.glassBorder + ';border-radius:9px;padding:8px 12px;color:' + C.text + ';outline:none;' + ROPS_CAIRO + 'font-size:12.5px;direction:ltr;text-align:left;';
+  const label = (t) => '<div style="' + ROPS_AR + 'font-size:12px;color:' + C.textDim + ';margin:8px 0 5px;">' + t + '</div>';
+  const f = e.form;
+  const formHTML = f.open
+    ? '<div id="rops-emp-form" style="margin-bottom:12px;padding:12px;border-radius:12px;border:1px solid ' + C.glassBorder + ';">' +
+        '<div style="' + ROPS_CAIRO + 'font-weight:800;font-size:13px;color:' + C.text + ';">' + (f.mode === "add" ? "إضافة ملف تشغيلي لموظف" : "تعديل الملف التشغيلي") + '</div>' +
+        '<div style="' + ROPS_AR + 'font-size:11px;color:' + C.textFaint + ';margin-top:4px;">لا ينشئ هذا الإجراء حساب موظف: يجب أن يكون الطرف (Party) من نوع EMPLOYEE موجوداً مسبقاً.</div>' +
+        (f.error ? '<div id="rops-emp-form-error" style="margin-top:8px;padding:8px 10px;border-radius:9px;background:' + C.dangerSoft + ';color:' + C.danger + ';' + ROPS_AR + 'font-size:12px;">' + escapeHtml(f.error) + '</div>' : "") +
+        label("party_id") +
+        (f.mode === "add"
+          ? '<input id="rops-emp-party-id" class="rops-input" data-path="employees.form.partyId" value="' + escapeHtml(f.partyId) + '" style="' + inputStyle + '" />'
+          : '<div id="rops-emp-party-readonly" style="' + inputStyle + 'opacity:.7;">' + escapeHtml(f.partyId) + '</div>') +
+        label("max_concurrent_requests") + '<input id="rops-emp-max" class="rops-input" data-path="employees.form.maxConcurrent" value="' + escapeHtml(f.maxConcurrent) + '" style="' + inputStyle + '" />' +
+        label("allowed_service_types (مفصولة بفواصل)") + '<input id="rops-emp-types" class="rops-input" data-path="employees.form.allowedTypes" value="' + escapeHtml(f.allowedTypes) + '" style="' + inputStyle + '" />' +
+        '<div style="display:flex;gap:8px;margin-top:10px;"><button id="btn-rops-emp-cancel" style="flex:1;padding:9px 0;border-radius:10px;cursor:pointer;background:rgba(255,255,255,0.05);border:1px solid ' + C.glassBorder + ';color:' + C.textDim + ';' + ROPS_CAIRO + 'font-weight:700;font-size:12px;">إلغاء</button>' +
+        '<button id="btn-rops-emp-save" ' + (f.submitting ? 'disabled ' : '') + 'style="flex:2;padding:9px 0;border-radius:10px;border:none;cursor:pointer;background:linear-gradient(135deg, ' + (theme.bright || theme.accent) + ', ' + theme.accent + ');color:#1A1408;' + ROPS_CAIRO + 'font-weight:800;font-size:12.5px;">' + (f.submitting ? "جارٍ الحفظ…" : "حفظ") + '</button></div></div>'
+    : "";
+  let body;
+  if (e.loading && !e.loaded) body = '<div style="padding:20px 0;text-align:center;' + ROPS_AR + 'font-size:12px;color:' + C.textFaint + ';">جارٍ تحميل الملفات التشغيلية…</div>';
+  else if (e.error) body = '<div id="rops-emp-error" style="padding:14px;border-radius:12px;background:' + C.dangerSoft + ';' + ROPS_AR + 'font-size:12.5px;color:' + C.danger + ';">' + escapeHtml(e.error) +
+    '<div style="margin-top:8px;"><button id="btn-rops-emp-retry" style="padding:7px 14px;border-radius:9px;border:1px solid ' + C.danger + ';background:transparent;color:' + C.danger + ';cursor:pointer;' + ROPS_CAIRO + 'font-weight:700;font-size:12px;">إعادة المحاولة</button></div></div>';
+  else if (e.items.length === 0) body = '<div id="rops-emp-empty" style="padding:20px 0;text-align:center;' + ROPS_AR + 'font-size:12px;color:' + C.textGhost + ';">لا توجد ملفات تشغيلية بعد</div>';
+  else body = e.items.map((x) =>
+    '<div class="rops-emp-row" data-party-id="' + escapeHtml(x.partyId) + '" data-archived="' + (x.isArchived ? "true" : "false") + '" style="padding:10px 0;border-top:1px solid ' + C.glassBorder + ';' + ROPS_AR + 'font-size:11.5px;color:' + C.text + ';">' +
+      '<div style="display:flex;justify-content:space-between;gap:8px;"><span style="direction:ltr;unicode-bidi:embed;">' + escapeHtml(x.partyId) + '</span>' +
+        AdminTableBadgeHTML(x.isArchived ? "مؤرشف" : "نشط", x.isArchived ? "#8A8A8A" : "#5FBF8F") + '</div>' +
+      '<div style="margin-top:4px;color:' + C.textFaint + ';">' + escapeHtml(x.availability) + ' · الحد المتزامن: ' + escapeHtml(String(x.maxConcurrentRequests)) + ' · الأنواع: ' + (x.allowedServiceTypes.length ? escapeHtml(x.allowedServiceTypes.join(", ")) : "—") + '</div>' +
+      '<div style="margin-top:6px;display:flex;gap:6px;">' +
+        '<button class="rops-emp-edit" data-party-id="' + escapeHtml(x.partyId) + '" style="padding:5px 10px;border-radius:8px;cursor:pointer;background:rgba(255,255,255,0.05);border:1px solid ' + C.glassBorder + ';color:' + C.textDim + ';font-size:11px;">تعديل</button>' +
+        '<button class="' + (x.isArchived ? "rops-emp-unarchive" : "rops-emp-archive") + '" data-party-id="' + escapeHtml(x.partyId) + '" style="padding:5px 10px;border-radius:8px;cursor:pointer;background:rgba(255,255,255,0.05);border:1px solid ' + C.glassBorder + ';color:' + C.textDim + ';font-size:11px;">' + (x.isArchived ? "إلغاء الأرشفة" : "أرشفة") + '</button></div></div>').join("");
+  const notice = e.notice ? '<div id="rops-emp-notice" style="margin-bottom:10px;padding:10px 14px;border-radius:11px;background:' + theme.soft + ';' + ROPS_AR + 'font-size:12px;color:' + C.text + ';">' + escapeHtml(e.notice) + '</div>' : "";
+  return notice +
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;"><span style="' + ROPS_CAIRO + 'font-weight:800;font-size:13.5px;color:' + C.text + ';">الملف التشغيلي للموظف</span>' +
+    '<button id="btn-rops-emp-add" style="padding:6px 12px;border-radius:9px;cursor:pointer;background:rgba(255,255,255,0.05);border:1px solid ' + C.glassBorder + ';color:' + C.textDim + ';' + ROPS_CAIRO + 'font-weight:700;font-size:11px;">إضافة ملف تشغيلي</button></div>' +
+    formHTML + '<div id="rops-emp-list">' + body + '</div>';
+}
+
+// ---------------------------------------------------------------- Admin: Groups ---
+async function loadRealOpsGroups() {
+  const g = rops().groups;
+  g.loading = true; g.error = null;
+  render();
+  const result = await BackendOperationsApi.listGroups();
+  g.loading = false;
+  if (result.status === 401) { handleApiUnauthorized(); return; }
+  if (!result.ok) { g.error = describeRealOperationsError(result); g.items = []; g.loaded = true; render(); return; }
+  g.items = result.data.map(mapRealEmployeeGroup);
+  g.loaded = true;
+  render();
+}
+async function saveRealOpsGroupForm() {
+  const g = rops().groups;
+  const f = g.form;
+  if (f.submitting) return;
+  const name = f.name.trim();
+  if (!name) { f.error = "اسم المجموعة مطلوب"; render(); return; }
+  f.submitting = true; f.error = null;
+  render();
+  const description = f.description.trim();
+  const result = await BackendOperationsApi.createGroup(description ? { name, description } : { name });
+  if (result.status === 401) { handleApiUnauthorized(); return; }
+  if (!result.ok) { f.submitting = false; f.error = describeRealOperationsError(result); render(); return; }
+  g.form = freshRealOperationsState().groups.form;
+  g.notice = "تم إنشاء المجموعة.";
+  await loadRealOpsGroups();
+}
+async function changeRealOpsGroupMember(add) {
+  const g = rops().groups;
+  const m = g.member;
+  if (m.submitting) return;
+  const groupId = m.groupId.trim();
+  const partyId = m.partyId.trim();
+  if (!groupId || !partyId) { m.error = "اختر المجموعة وأدخل party_id"; render(); return; }
+  m.submitting = true; m.error = null; g.notice = null;
+  render();
+  const result = add ? await BackendOperationsApi.addGroupMember(groupId, partyId) : await BackendOperationsApi.removeGroupMember(groupId, partyId);
+  m.submitting = false;
+  if (result.status === 401) { handleApiUnauthorized(); return; }
+  if (!result.ok) { m.error = describeRealOperationsError(result); render(); return; }
+  g.notice = add ? "تمت إضافة العضو." : "تمت إزالة العضو.";
+  render();
+}
+function RealOpsGroupsTabHTML(theme) {
+  const g = rops().groups;
+  const inputStyle = 'width:100%;box-sizing:border-box;background:rgba(255,255,255,0.03);border:1px solid ' + C.glassBorder + ';border-radius:9px;padding:8px 12px;color:' + C.text + ';outline:none;' + ROPS_CAIRO + 'font-size:12.5px;';
+  const f = g.form;
+  const btnStyle = 'padding:8px 14px;border-radius:9px;cursor:pointer;background:rgba(255,255,255,0.05);border:1px solid ' + C.glassBorder + ';color:' + C.textDim + ';' + ROPS_CAIRO + 'font-weight:700;font-size:12px;';
+  let body;
+  if (g.loading && !g.loaded) body = '<div style="padding:20px 0;text-align:center;' + ROPS_AR + 'font-size:12px;color:' + C.textFaint + ';">جارٍ تحميل المجموعات…</div>';
+  else if (g.error) body = '<div id="rops-group-error" style="padding:14px;border-radius:12px;background:' + C.dangerSoft + ';' + ROPS_AR + 'font-size:12.5px;color:' + C.danger + ';">' + escapeHtml(g.error) +
+    '<div style="margin-top:8px;"><button id="btn-rops-group-retry" style="padding:7px 14px;border-radius:9px;border:1px solid ' + C.danger + ';background:transparent;color:' + C.danger + ';cursor:pointer;' + ROPS_CAIRO + 'font-weight:700;font-size:12px;">إعادة المحاولة</button></div></div>';
+  else if (g.items.length === 0) body = '<div id="rops-group-empty" style="padding:20px 0;text-align:center;' + ROPS_AR + 'font-size:12px;color:' + C.textGhost + ';">لا توجد مجموعات بعد</div>';
+  else body = g.items.map((x) =>
+    '<div class="rops-group-row" data-group-id="' + escapeHtml(x.id) + '" style="padding:10px 0;border-top:1px solid ' + C.glassBorder + ';' + ROPS_AR + 'font-size:12px;color:' + C.text + ';">' +
+      '<div style="display:flex;justify-content:space-between;"><b>' + escapeHtml(x.name) + '</b>' + AdminTableBadgeHTML(x.isActive ? "نشطة" : "غير نشطة", x.isActive ? "#5FBF8F" : "#8A8A8A") + '</div>' +
+      '<div style="color:' + C.textFaint + ';font-size:11px;direction:ltr;text-align:left;">' + escapeHtml(x.id) + (x.description ? ' · ' + escapeHtml(x.description) : '') + '</div></div>').join("");
+  const options = '<option value="">— اختر مجموعة —</option>' + g.items.map((x) => '<option value="' + escapeHtml(x.id) + '"' + (g.member.groupId === x.id ? " selected" : "") + '>' + escapeHtml(x.name) + '</option>').join("");
+  const notice = g.notice ? '<div id="rops-group-notice" style="margin-bottom:10px;padding:10px 14px;border-radius:11px;background:' + theme.soft + ';' + ROPS_AR + 'font-size:12px;color:' + C.text + ';">' + escapeHtml(g.notice) + '</div>' : "";
+  return notice +
+    '<div id="rops-group-form" style="margin-bottom:12px;padding:12px;border-radius:12px;border:1px solid ' + C.glassBorder + ';">' +
+      '<div style="' + ROPS_CAIRO + 'font-weight:800;font-size:13px;color:' + C.text + ';margin-bottom:6px;">مجموعة جديدة</div>' +
+      (f.error ? '<div id="rops-group-form-error" style="margin-bottom:8px;padding:8px 10px;border-radius:9px;background:' + C.dangerSoft + ';color:' + C.danger + ';' + ROPS_AR + 'font-size:12px;">' + escapeHtml(f.error) + '</div>' : "") +
+      '<input id="rops-group-name" class="rops-input" data-path="groups.form.name" value="' + escapeHtml(f.name) + '" placeholder="اسم المجموعة" style="' + inputStyle + 'margin-bottom:6px;" />' +
+      '<input id="rops-group-description" class="rops-input" data-path="groups.form.description" value="' + escapeHtml(f.description) + '" placeholder="وصف (اختياري)" style="' + inputStyle + '" />' +
+      '<button id="btn-rops-group-save" ' + (f.submitting ? 'disabled ' : '') + 'style="margin-top:8px;' + btnStyle + '">إنشاء المجموعة</button></div>' +
+    '<div id="rops-group-list">' + body + '</div>' +
+    '<div id="rops-member-form" style="margin-top:12px;padding:12px;border-radius:12px;border:1px solid ' + C.glassBorder + ';">' +
+      '<div style="' + ROPS_CAIRO + 'font-weight:800;font-size:13px;color:' + C.text + ';margin-bottom:4px;">أعضاء المجموعة</div>' +
+      '<div style="' + ROPS_AR + 'font-size:11px;color:' + C.textFaint + ';margin-bottom:6px;">الخادم لا يعيد أسماء الأعضاء ولا قائمة الأعضاء — يُستخدم party_id فقط.</div>' +
+      (g.member.error ? '<div id="rops-member-error" style="margin-bottom:8px;padding:8px 10px;border-radius:9px;background:' + C.dangerSoft + ';color:' + C.danger + ';' + ROPS_AR + 'font-size:12px;">' + escapeHtml(g.member.error) + '</div>' : "") +
+      '<select id="rops-member-group" class="rops-input" data-path="groups.member.groupId" style="' + inputStyle + 'margin-bottom:6px;">' + options + '</select>' +
+      '<input id="rops-member-party" class="rops-input" data-path="groups.member.partyId" value="' + escapeHtml(g.member.partyId) + '" placeholder="party_id" style="' + inputStyle + 'direction:ltr;text-align:left;" />' +
+      '<div style="display:flex;gap:8px;margin-top:8px;"><button id="btn-rops-member-add" ' + (g.member.submitting ? 'disabled ' : '') + 'style="' + btnStyle + '">إضافة عضو</button>' +
+      '<button id="btn-rops-member-remove" ' + (g.member.submitting ? 'disabled ' : '') + 'style="' + btnStyle + '">إزالة عضو</button></div></div>';
+}
+
+// ---------------------------------------------------------------- Admin module shell ---
+function AdminOperationsBackendModuleHTML(theme) {
+  const o = rops();
+  const tabs = [{ id: "requests", label: "الطلبات" }, { id: "employees", label: "الملفات التشغيلية للموظفين" }, { id: "groups", label: "المجموعات" }];
+  const tabsHTML = '<div id="rops-tabs" style="display:flex;gap:8px;overflow-x:auto;margin-bottom:14px;">' + tabs.map((t) => {
+    const on = o.tab === t.id;
+    return '<button class="rops-tab" data-tab="' + t.id + '" style="flex-shrink:0;padding:9px 15px;border-radius:11px;cursor:pointer;' + ROPS_AR + 'font-weight:600;font-size:12.5px;border:1px solid ' + (on ? theme.border : C.glassBorder) + ';background:' + (on ? theme.soft : C.glass) + ';color:' + (on ? (theme.bright || theme.accent) : C.text) + ';">' + t.label + '</button>';
+  }).join("") + '</div>';
+  const body = o.tab === "employees" ? RealOpsEmployeesTabHTML(theme) : o.tab === "groups" ? RealOpsGroupsTabHTML(theme) : RealOpsRequestsTabHTML(theme);
+  return '<div id="rops-panel">' +
+    '<div style="' + ROPS_CAIRO + 'font-weight:800;font-size:16px;color:' + C.text + ';margin-bottom:4px;">العمليات — النظام الفعلي</div>' +
+    '<div id="rops-real-note" style="' + ROPS_AR + 'font-size:11px;color:' + C.textFaint + ';margin-bottom:12px;">الحالة والتوزيع والعروض والصلاحيات تأتي من الخادم. هذه الشاشة منفصلة عن وحدة "العمليات" المحلية (Mock) ولا تستخدم بياناتها.</div>' +
+    tabsHTML + body + '</div>';
+}
+function setRealOpsTab(tab) {
+  const o = rops();
+  o.tab = tab;
+  render();
+  if (tab === "employees" && !o.employees.loaded) loadRealOpsEmployees();
+  else if (tab === "groups" && !o.groups.loaded) loadRealOpsGroups();
+  else if (tab === "requests" && !o.requests.loaded) loadRealOpsRequests();
+}
+
+// ---------------------------------------------------------------- Employee workspace (foundation) ---
+async function loadRealEmployeeOffers() {
+  const l = rops().employee.offers;
+  l.loading = true; l.error = null;
+  render();
+  const result = await BackendOperationsApi.listMyOffers();
+  l.loading = false;
+  if (result.status === 401) { handleApiUnauthorized(); return; }
+  if (!result.ok) { l.error = describeRealOperationsError(result); l.items = []; l.loaded = true; render(); return; }
+  l.items = result.data.map(mapRealOffer);
+  l.loaded = true;
+  render();
+}
+async function loadRealEmployeeRequests() {
+  const l = rops().employee.requests;
+  l.loading = true; l.error = null;
+  render();
+  const result = await BackendOperationsApi.listMyServiceRequests();
+  l.loading = false;
+  if (result.status === 401) { handleApiUnauthorized(); return; }
+  if (!result.ok) { l.error = describeRealOperationsError(result); l.items = []; l.loaded = true; render(); return; }
+  l.items = result.data.map(mapRealServiceRequest);
+  l.loaded = true;
+  render();
+}
+async function setRealEmployeeAvailability(availability) {
+  const emp = rops().employee;
+  if (emp.availabilityBusy) return;
+  emp.availabilityBusy = true; emp.notice = null;
+  render();
+  const result = await BackendOperationsApi.setAvailability(availability);
+  emp.availabilityBusy = false;
+  if (result.status === 401) { handleApiUnauthorized(); return; }
+  if (!result.ok) { emp.notice = describeRealOperationsError(result); render(); return; }
+  emp.profile = mapRealEmployeeProfile(result.data); // the backend's own answer, not a local flip
+  render();
+}
+function renderRealEmployeeWorkspaceScreen() {
+  const theme = GOLD_THEME;
+  const emp = rops().employee;
+  const p = emp.profile;
+  const section = (title, inner) => '<div style="padding:16px 20px 0;"><div style="' + ROPS_CAIRO + 'font-weight:800;font-size:14px;color:' + C.text + ';margin-bottom:8px;">' + title + '</div>' + inner + '</div>';
+  const list = (l, id, emptyText, rowHTML) => l.loading && !l.loaded ? '<div style="' + ROPS_AR + 'font-size:12px;color:' + C.textFaint + ';">جارٍ التحميل من الخادم…</div>'
+    : l.error ? '<div id="' + id + '-error" style="padding:10px 12px;border-radius:10px;background:' + C.dangerSoft + ';color:' + C.danger + ';' + ROPS_AR + 'font-size:12px;">' + escapeHtml(l.error) + '</div>'
+    : l.items.length === 0 ? '<div id="' + id + '-empty" style="' + ROPS_AR + 'font-size:12px;color:' + C.textGhost + ';">' + emptyText + '</div>'
+    : l.items.map(rowHTML).join("");
+  const availBtn = (value, label) => '<button class="rops-availability" data-availability="' + value + '" ' + (emp.availabilityBusy ? 'disabled ' : '') + 'style="flex:1;padding:9px 0;border-radius:10px;cursor:pointer;' + ROPS_CAIRO + 'font-weight:700;font-size:12px;border:1px solid ' + (p && p.availability === value ? theme.border : C.glassBorder) + ';background:' + (p && p.availability === value ? theme.soft : C.glass) + ';color:' + C.text + ';">' + label + '</button>';
+  return '' +
+    '<div style="padding:20px 20px 0;display:flex;align-items:center;justify-content:space-between;">' +
+      '<div><div style="' + ROPS_AR + 'font-size:12px;color:' + C.textDim + ';">واجهة الموظف (النظام الفعلي)</div>' +
+      '<div id="rops-employee-party" style="' + ROPS_CAIRO + 'font-weight:800;font-size:13px;color:' + C.text + ';direction:ltr;text-align:left;">' + escapeHtml(state.session.backendPartyId || "") + '</div></div>' +
+      '<button id="btn-real-employee-logout" aria-label="تسجيل الخروج" style="width:38px;height:38px;border-radius:11px;background:' + C.glass + ';border:1px solid ' + C.glassBorder + ';display:flex;align-items:center;justify-content:center;cursor:pointer;">' + Icons.X(16, C.textDim) + '</button>' +
+    '</div>' +
+    (emp.notice ? '<div id="rops-employee-notice" style="margin:12px 20px 0;padding:10px 14px;border-radius:11px;background:' + C.dangerSoft + ';' + ROPS_AR + 'font-size:12px;color:' + C.danger + ';">' + escapeHtml(emp.notice) + '</div>' : "") +
+    section("التوفر", '<div id="rops-availability" data-availability="' + (p ? escapeHtml(p.availability) : "") + '" style="display:flex;gap:8px;">' + availBtn("ONLINE", "متاح (ONLINE)") + availBtn("OFFLINE", "غير متاح (OFFLINE)") + '</div>' +
+      (p ? '<div style="margin-top:6px;' + ROPS_AR + 'font-size:11px;color:' + C.textFaint + ';">الحد المتزامن: ' + escapeHtml(String(p.maxConcurrentRequests)) + ' · الأنواع: ' + (p.allowedServiceTypes.length ? escapeHtml(p.allowedServiceTypes.join(", ")) : "—") + '</div>' : "")) +
+    section("عروضي", '<div id="rops-my-offers">' + list(emp.offers, "rops-offers", "لا توجد عروض حالياً", (o) =>
+      '<div class="rops-offer-row" data-offer-id="' + escapeHtml(o.id) + '" style="padding:8px 0;border-top:1px solid ' + C.glassBorder + ';' + ROPS_AR + 'font-size:11.5px;color:' + C.text + ';direction:ltr;text-align:left;">request: ' + escapeHtml(o.serviceRequestId) + '<br>expires_at: ' + realOpsTime(o.expiresAt) + '</div>') + '</div>' +
+      '<button id="btn-rops-offers-refresh" style="margin-top:6px;padding:6px 12px;border-radius:9px;cursor:pointer;background:rgba(255,255,255,0.05);border:1px solid ' + C.glassBorder + ';color:' + C.textDim + ';font-size:11px;">تحديث</button>') +
+    section("طلباتي", '<div id="rops-my-requests">' + list(emp.requests, "rops-myreq", "لا توجد طلبات مسندة إليك", (x) =>
+      '<div class="rops-myreq-row" data-request-id="' + escapeHtml(x.id) + '" data-status="' + escapeHtml(String(x.status)) + '" style="padding:8px 0;border-top:1px solid ' + C.glassBorder + ';' + ROPS_AR + 'font-size:11.5px;color:' + C.text + ';"><div style="display:flex;justify-content:space-between;gap:8px;"><span style="direction:ltr;">' + escapeHtml(x.id) + '</span>' + realServiceRequestStatusBadgeHTML(x.status) + '</div><div style="color:' + C.textFaint + ';">service_type: ' + escapeHtml(String(x.serviceType)) + '</div></div>') + '</div>' +
+      '<button id="btn-rops-myreq-refresh" style="margin-top:6px;padding:6px 12px;border-radius:9px;cursor:pointer;background:rgba(255,255,255,0.05);border:1px solid ' + C.glassBorder + ';color:' + C.textDim + ';font-size:11px;">تحديث</button>') +
+    '<div style="padding:14px 20px 24px;' + ROPS_AR + 'font-size:11px;color:' + C.textFaint + ';">أساس واجهة الموظف: التوفر والعروض والطلبات من الخادم فقط. تنفيذ الاستلام/البدء/الإكمال في مرحلة لاحقة.</div>';
+}
+
+function bindRealOperationsEvents() {
+  const $ = (id) => document.getElementById(id);
+  // Typing only updates state (no render), keyed by a path into the real-operations state.
+  document.querySelectorAll(".rops-input").forEach((input) => {
+    const handler = (e) => {
+      const parts = input.getAttribute("data-path").split(".");
+      let target = rops();
+      for (let i = 0; i < parts.length - 1; i += 1) target = target[parts[i]];
+      target[parts[parts.length - 1]] = e.target.value;
+    };
+    if (input.tagName === "SELECT") input.onchange = handler; else input.oninput = handler;
+  });
+  document.querySelectorAll(".rops-tab").forEach((btn) => { btn.onclick = () => setRealOpsTab(btn.getAttribute("data-tab")); });
+  if ($("btn-rops-requests-refresh")) $("btn-rops-requests-refresh").onclick = () => loadRealOpsRequests();
+  if ($("btn-rops-requests-retry")) $("btn-rops-requests-retry").onclick = () => loadRealOpsRequests();
+  document.querySelectorAll(".rops-open").forEach((btn) => { btn.onclick = () => openRealOpsRequestDetail(btn.getAttribute("data-request-id")); });
+  document.querySelectorAll(".rops-dispatch").forEach((btn) => { btn.onclick = () => dispatchRealOpsRequest(btn.getAttribute("data-request-id")); });
+  document.querySelectorAll(".rops-cancel").forEach((btn) => { btn.onclick = () => openRealOpsRequestDetail(btn.getAttribute("data-request-id"), { cancelConfirm: true }); });
+  if ($("btn-rops-detail-close")) $("btn-rops-detail-close").onclick = () => closeRealOpsRequestDetail();
+  if ($("btn-rops-cancel-confirm")) $("btn-rops-cancel-confirm").onclick = () => cancelRealOpsRequest();
+  if ($("btn-rops-emp-add")) $("btn-rops-emp-add").onclick = () => openRealOpsEmployeeForm("add");
+  if ($("btn-rops-emp-retry")) $("btn-rops-emp-retry").onclick = () => loadRealOpsEmployees();
+  if ($("btn-rops-emp-cancel")) $("btn-rops-emp-cancel").onclick = () => { rops().employees.form = freshRealOperationsState().employees.form; render(); };
+  if ($("btn-rops-emp-save")) $("btn-rops-emp-save").onclick = () => saveRealOpsEmployeeForm();
+  document.querySelectorAll(".rops-emp-edit").forEach((btn) => { btn.onclick = () => openRealOpsEmployeeForm("edit", btn.getAttribute("data-party-id")); });
+  document.querySelectorAll(".rops-emp-archive").forEach((btn) => { btn.onclick = () => toggleRealOpsEmployeeArchive(btn.getAttribute("data-party-id"), true); });
+  document.querySelectorAll(".rops-emp-unarchive").forEach((btn) => { btn.onclick = () => toggleRealOpsEmployeeArchive(btn.getAttribute("data-party-id"), false); });
+  if ($("btn-rops-group-retry")) $("btn-rops-group-retry").onclick = () => loadRealOpsGroups();
+  if ($("btn-rops-group-save")) $("btn-rops-group-save").onclick = () => saveRealOpsGroupForm();
+  if ($("btn-rops-member-add")) $("btn-rops-member-add").onclick = () => changeRealOpsGroupMember(true);
+  if ($("btn-rops-member-remove")) $("btn-rops-member-remove").onclick = () => changeRealOpsGroupMember(false);
+  document.querySelectorAll(".rops-availability").forEach((btn) => { btn.onclick = () => setRealEmployeeAvailability(btn.getAttribute("data-availability")); });
+  if ($("btn-rops-offers-refresh")) $("btn-rops-offers-refresh").onclick = () => loadRealEmployeeOffers();
+  if ($("btn-rops-myreq-refresh")) $("btn-rops-myreq-refresh").onclick = () => loadRealEmployeeRequests();
+  if ($("btn-real-employee-logout")) $("btn-real-employee-logout").onclick = () => {
+    state.session = freshSessionState();
+    state.app.currentScreen = "login";
+    persistAuthState();
+    render();
+  };
+}
+
 const ADMIN_PROVIDER_FORM_FIELDS_INFO = [
   { id: "provf-name", key: "name", label: "اسم المزوّد", type: "text", required: true, placeholder: "مثال: مزوّد الشحن الرقمي" },
   { id: "provf-type", key: "type", label: "النوع", type: "select", options: [] }, // built fresh per render from PROVIDER_TYPES, see below
@@ -37786,6 +38395,7 @@ const ADMIN_MODULE_RENDERERS = {
   agentsBackend: AdminAgentsBackendModuleHTML,
   servicesBackend: AdminServicesBackendModuleHTML,
   transactionsBackend: AdminTransactionsBackendModuleHTML,
+  operationsBackend: AdminOperationsBackendModuleHTML,
   telecomCompanies: AdminTelecomCompaniesModuleHTML,
   wifi: AdminWifiModuleHTML,
   games: AdminGamesModuleHTML,
@@ -38059,16 +38669,13 @@ function attachEvents() {
       } else {
         // An ownership-only real identity (e.g. Agent) — no Admin Panel
         // to enter; lands on its own "My Wallet" home instead.
-        state.session.isAuthenticated = true;
-        state.session.role = "agentBackend";
-        state.session.backendPartyId = me.data.party_id;
-        state.session.loginForm = { loginIdentifier: "", password: "", error: null, submitting: false };
-        state.app.currentScreen = "myWalletHome";
+        // REAL OPERATIONS V1: Employee vs Agent is decided in ONE place, from GET /auth/me's employee_profile.
+        routeRealRoleLessIdentity(me.data);
       }
       state.session.loginForm.submitting = false;
       persistAuthState();
       render();
-      if (me.data.roles && me.data.roles.length === 0) { loadMyWalletBalance(); loadRealTransactionsList(); }
+      if (me.data.roles && me.data.roles.length === 0) loadRealIdentityHomeData();
       return;
     }
 
@@ -38949,6 +39556,13 @@ function attachEvents() {
       // REAL TRANSACTIONS V1 — fresh entry refetches from the real backend.
       if (moduleId === "transactionsBackend") {
         loadRealTransactionsList();
+      }
+      // REAL OPERATIONS V1 — fresh entry refetches from the real backend (never the local mock engine).
+      if (moduleId === "operationsBackend") {
+        const ro = rops();
+        ro.tab = "requests";
+        ro.detail = freshRealOperationsState().detail;
+        loadRealOpsRequests();
       }
     };
   });
@@ -40588,6 +41202,7 @@ function attachEvents() {
   if ($("btn-admin-service-backend-form-save")) $("btn-admin-service-backend-form-save").onclick = () => saveServiceBackendForm();
   if ($("btn-admin-services-backend-retry")) $("btn-admin-services-backend-retry").onclick = () => loadServicesBackendFromBackend();
   bindRealTransactionsEvents();
+  bindRealOperationsEvents();
 
   /* ── Provider Account Admin (Phase 1) ── */
   document.querySelectorAll(".admin-provider-accounts").forEach((btn) => {
@@ -42976,14 +43591,23 @@ if (!hasAdministratorAccount()) {
   // single-vs-multiple logic completeLoginForAccount() itself uses.
   // If no session was persisted (or it was cleared by a logout),
   // state.app.currentScreen keeps its "login" default.
-  state.session.availableWorkspaces = resolveAvailableWorkspacesForAccount(state.session.account);
-  const activeStillValid = state.session.availableWorkspaces.some((w) => w.id === state.session.activeWorkspaceId);
-  if (activeStillValid) {
-    openWorkspace(state.session.activeWorkspaceId);
-  } else if (state.session.availableWorkspaces.length > 1) {
-    state.app.currentScreen = "workspaceSelect";
-  } else {
-    openWorkspace((state.session.availableWorkspaces[0] || {}).id);
+  // REAL role-less identities (Employee / Agent) carry no local account: there is no local workspace to
+  // resolve for them (resolveAvailableWorkspacesForAccount(null) would throw and abort the whole boot), so
+  // the persisted screen is kept and their own boot hooks below refetch from the backend.
+  if (state.session.account) {
+    state.session.availableWorkspaces = resolveAvailableWorkspacesForAccount(state.session.account);
+    const activeStillValid = state.session.availableWorkspaces.some((w) => w.id === state.session.activeWorkspaceId);
+    if (activeStillValid) {
+      openWorkspace(state.session.activeWorkspaceId);
+    } else if (state.session.availableWorkspaces.length > 1) {
+      state.app.currentScreen = "workspaceSelect";
+    } else {
+      openWorkspace((state.session.availableWorkspaces[0] || {}).id);
+    }
+  } else if (state.session.accessToken && (state.session.role === "employeeBackend" || state.session.role === "agentBackend")) {
+    // The screen itself is never persisted: restore the provisional one from the remembered real role; the boot hook
+    // below asks the backend again (GET /auth/me) and routeRealRoleLessIdentity() has the final say.
+    state.app.currentScreen = state.session.role === "employeeBackend" ? "realEmployeeWorkspace" : "myWalletHome";
   }
   // SPA ↔ Backend Integration V1 — a reload that lands directly on the
   // Providers module (persisted `state.admin.navigation.activeModule`)
@@ -43006,12 +43630,14 @@ if (!hasAdministratorAccount()) {
   if (state.app.currentScreen === "adminPanel" && getSafeActiveAdminModuleId() === "transactionsBackend" && state.session.accessToken) {
     loadRealTransactionsList();
   }
-  // "My Wallet" home — a reload landing directly here (persisted
-  // currentScreen) never went through the login handler's own
-  // loadMyWalletBalance() call above, so it is triggered once here too.
-  if (state.app.currentScreen === "myWalletHome" && state.session.accessToken) {
-    loadMyWalletBalance();
-    loadRealTransactionsList();
+  if (state.app.currentScreen === "adminPanel" && getSafeActiveAdminModuleId() === "operationsBackend" && state.session.accessToken) {
+    loadRealOpsRequests();
+  }
+  // Real role-less identities ("My Wallet" Agent / real Employee Workspace) — a reload never went through the login
+  // handler, so the backend is asked again who this identity is (one decision point: routeRealRoleLessIdentity), and
+  // the matching home data (wallet + transactions, or offers + requests) is fetched.
+  if ((state.app.currentScreen === "myWalletHome" || state.app.currentScreen === "realEmployeeWorkspace") && state.session.accessToken) {
+    refreshRealRoleLessIdentityOnBoot();
   }
 }
 
