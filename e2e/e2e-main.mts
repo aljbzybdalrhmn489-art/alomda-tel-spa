@@ -48,6 +48,13 @@ export const E2E_TX_PACKAGE_EXPENSIVE = 'e2e-pkg-expensive'; // 50,000,000 YER (
 export const E2E_EMPLOYEE_LOGIN = 'e2e-employee';
 export const E2E_EMPLOYEE_PASSWORD = 'e2e-employee-password-1';
 export const E2E_EMPLOYEE_SERVICE_TYPE = 'e2e-ops';
+export const E2E_EMPLOYEE_B_LOGIN = 'e2e-employee-b';
+export const E2E_EMPLOYEE_B_PASSWORD = 'e2e-employee-b-password-1';
+export const E2E_EMPLOYEE_B_SERVICE_TYPE = 'e2e-ops-b';
+const E2E_EMPLOYEES = [
+  { login: E2E_EMPLOYEE_LOGIN, password: E2E_EMPLOYEE_PASSWORD, serviceType: E2E_EMPLOYEE_SERVICE_TYPE, displayName: 'E2E Employee' },
+  { login: E2E_EMPLOYEE_B_LOGIN, password: E2E_EMPLOYEE_B_PASSWORD, serviceType: E2E_EMPLOYEE_B_SERVICE_TYPE, displayName: 'E2E Employee B' },
+];
 const PRICING_GROUP_ID = '0192e2e0-0000-7000-8000-000000000001';
 const VALID_FROM = new Date('2026-01-01T00:00:00Z');
 
@@ -135,32 +142,36 @@ async function seed(): Promise<void> {
     // so (like the backend's own tests) it is seeded through the repositories: a Party of type EMPLOYEE, an ACTIVE
     // UserAccount with an Argon2id PASSWORD credential, and an ONLINE, unarchived operational profile (re-asserted on
     // every start so earlier runs cannot leave it archived/offline). It holds NO role.
-    const employeeUser = await database.query(`SELECT id, party_id FROM users WHERE tenant_id = $1 AND login_identifier = $2`, [tenantId, E2E_EMPLOYEE_LOGIN]);
-    let employeePartyId: string;
-    if (employeeUser.rows[0] === undefined) {
-      const parties = new PostgresPartyRepository({ database, unitOfWork, tenantId });
-      employeePartyId = String(ids.generate());
-      const savedParty = await parties.save(toPartyRecord(Party.create({
-        id: employeePartyId as never, partyType: 'EMPLOYEE', parentId: null, accountNumber: 'EMP-' + employeePartyId.slice(-8), displayName: 'E2E Employee',
-        phone: '+9677' + employeePartyId.slice(-9).replace(/[^0-9]/g, '1'), zoneCode: 'SOUTH', status: 'ACTIVE',
-      }, ZoneRegistry.build())));
-      if (!savedParty.ok) throw new Error('seed employee party: ' + savedParty.error.message);
-      const userId = String(ids.generate());
-      const users = new PostgresUserAccountRepository({ database, unitOfWork, tenantId });
-      const savedUser = await users.save({ id: userId as never, partyId: employeePartyId, loginIdentifier: E2E_EMPLOYEE_LOGIN, status: 'ACTIVE', mustChangePassword: false, lockedUntil: null, failedAttempts: 0 });
-      if (!savedUser.ok) throw new Error('seed employee user: ' + savedUser.error.message);
-      const argon2 = createRequire(import.meta.url)('../backend/node_modules/@node-rs/argon2') as { hash(password: string): Promise<string> };
-      const credentials = new PostgresCredentialRepository({ database, unitOfWork, tenantId });
-      const savedCredential = await credentials.save({ id: String(ids.generate()), userId: userId as never, kind: 'PASSWORD', hash: await argon2.hash(E2E_EMPLOYEE_PASSWORD), algoParams: null, rotatedAt: null });
-      if (!savedCredential.ok) throw new Error('seed employee credential: ' + savedCredential.error.message);
-    } else {
-      employeePartyId = String(employeeUser.rows[0]['party_id']);
+    // Two Employees (additive): employee A serves 'e2e-ops'; employee B serves a DIFFERENT service type, so dispatch
+    // never offers A's requests to B — B exists to prove the backend refuses a wrong employee (403) for claim/start/complete.
+    for (const employee of E2E_EMPLOYEES) {
+      const employeeUser = await database.query(`SELECT id, party_id FROM users WHERE tenant_id = $1 AND login_identifier = $2`, [tenantId, employee.login]);
+      let employeePartyId: string;
+      if (employeeUser.rows[0] === undefined) {
+        const parties = new PostgresPartyRepository({ database, unitOfWork, tenantId });
+        employeePartyId = String(ids.generate());
+        const savedParty = await parties.save(toPartyRecord(Party.create({
+          id: employeePartyId as never, partyType: 'EMPLOYEE', parentId: null, accountNumber: 'EMP-' + employeePartyId.slice(-8), displayName: employee.displayName,
+          phone: '+9677' + employeePartyId.slice(-9).replace(/[^0-9]/g, '1'), zoneCode: 'SOUTH', status: 'ACTIVE',
+        }, ZoneRegistry.build())));
+        if (!savedParty.ok) throw new Error('seed employee party: ' + savedParty.error.message);
+        const userId = String(ids.generate());
+        const users = new PostgresUserAccountRepository({ database, unitOfWork, tenantId });
+        const savedUser = await users.save({ id: userId as never, partyId: employeePartyId, loginIdentifier: employee.login, status: 'ACTIVE', mustChangePassword: false, lockedUntil: null, failedAttempts: 0 });
+        if (!savedUser.ok) throw new Error('seed employee user: ' + savedUser.error.message);
+        const argon2 = createRequire(import.meta.url)('../backend/node_modules/@node-rs/argon2') as { hash(password: string): Promise<string> };
+        const credentials = new PostgresCredentialRepository({ database, unitOfWork, tenantId });
+        const savedCredential = await credentials.save({ id: String(ids.generate()), userId: userId as never, kind: 'PASSWORD', hash: await argon2.hash(employee.password), algoParams: null, rotatedAt: null });
+        if (!savedCredential.ok) throw new Error('seed employee credential: ' + savedCredential.error.message);
+      } else {
+        employeePartyId = String(employeeUser.rows[0]['party_id']);
+      }
+      const profiles = new PostgresEmployeeOperationalProfileRepository({ database, tenantId });
+      const savedProfile = await profiles.save(toEmployeeOperationalProfileRecord(EmployeeOperationalProfile.create({
+        partyId: employeePartyId as never, maxConcurrentRequests: 1000, allowedServiceTypes: [employee.serviceType], availability: 'ONLINE', createdAt: VALID_FROM,
+      })));
+      if (!savedProfile.ok) throw new Error('seed employee profile: ' + savedProfile.error.message);
     }
-    const profiles = new PostgresEmployeeOperationalProfileRepository({ database, tenantId });
-    const savedProfile = await profiles.save(toEmployeeOperationalProfileRecord(EmployeeOperationalProfile.create({
-      partyId: employeePartyId as never, maxConcurrentRequests: 1000, allowedServiceTypes: [E2E_EMPLOYEE_SERVICE_TYPE], availability: 'ONLINE', createdAt: VALID_FROM,
-    })));
-    if (!savedProfile.ok) throw new Error('seed employee profile: ' + savedProfile.error.message);
   } finally {
     await database.close();
   }

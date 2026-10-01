@@ -30759,7 +30759,7 @@ function freshRealOperationsState() {
       form: { open: false, name: "", description: "", submitting: false, error: null },
       member: { groupId: "", partyId: "", submitting: false, error: null },
     }),
-    employee: { profile: null, notice: null, availabilityBusy: false, offers: listState(), requests: listState() },
+    employee: { profile: null, notice: null, noticeOk: false, busyId: null, availabilityBusy: false, offers: listState(), requests: listState() },
   };
 }
 function rops() {
@@ -31177,32 +31177,97 @@ async function setRealEmployeeAvailability(availability) {
   emp.profile = mapRealEmployeeProfile(result.data); // the backend's own answer, not a local flip
   render();
 }
+/**
+ * Employee workflow actions — claim / start / complete. Each one calls exactly one backend route and shows the
+ * backend's answer; nothing is changed locally before the backend succeeds, nothing is retried, and a 403/409 is
+ * always shown. After a success, or after a 404/409, the lists are refetched so the screen shows the REAL current
+ * state (never a guess, never a local transition). No expiry/timer logic exists here: a claim on an expired offer is
+ * simply answered 409 by the backend.
+ */
+function describeRealEmployeeActionError(result, action) {
+  if (result.networkError || result.status === 401) return describeApiError(result);
+  let prefix = "";
+  if (result.status === 403) prefix = action === "claim" ? "هذا العرض ليس مخصصاً لهذا الموظف. " : "هذا الطلب غير مسند إلى هذا الموظف. ";
+  else if (result.status === 404) prefix = action === "claim" ? "العرض غير موجود. " : "الطلب غير موجود. ";
+  else if (result.status === 409) prefix = action === "claim" ? "انتهى العرض أو تم استلامه أو تغيّرت حالة الطلب — تم تحديث البيانات. " : "تغيّرت حالة الطلب ولا يسمح بهذا الإجراء الآن — تم تحديث البيانات. ";
+  else if (result.status >= 500) prefix = "خطأ في الخادم. ";
+  else if (result.status === 400) prefix = "بيانات غير صالحة. ";
+  return prefix + describeApiError(result);
+}
+async function performRealEmployeeAction(action, id) {
+  const emp = rops().employee;
+  if (emp.busyId) return; // same-page double-click guard only; the backend's concurrency control is what really decides
+  emp.busyId = id; emp.notice = null; emp.noticeOk = false;
+  render();
+  let result;
+  if (action === "claim") result = await BackendOperationsApi.claimOffer(id);
+  else if (action === "start") result = await BackendOperationsApi.startServiceRequest(id);
+  else result = await BackendOperationsApi.completeServiceRequest(id);
+  emp.busyId = null;
+  if (result.status === 401) { handleApiUnauthorized(); return; }
+  if (!result.ok) {
+    emp.notice = describeRealEmployeeActionError(result, action);
+    emp.noticeOk = false;
+    render();
+    if (result.status === 404 || result.status === 409) { loadRealEmployeeOffers(); loadRealEmployeeRequests(); }
+    return;
+  }
+  emp.notice = action === "claim" ? "تم استلام الطلب — حالته الآن " + result.data.status + " (من الخادم)."
+    : action === "start" ? "بدأ التنفيذ — حالة الطلب الآن " + result.data.status + " (من الخادم)."
+    : "تم إكمال الطلب — حالته الآن " + result.data.status + " (من الخادم).";
+  emp.noticeOk = true;
+  render();
+  loadRealEmployeeOffers();
+  loadRealEmployeeRequests();
+}
+function claimRealEmployeeOffer(offerId) { return performRealEmployeeAction("claim", offerId); }
+function startRealEmployeeRequest(requestId) { return performRealEmployeeAction("start", requestId); }
+function completeRealEmployeeRequest(requestId) { return performRealEmployeeAction("complete", requestId); }
+
 function renderRealEmployeeWorkspaceScreen() {
   const theme = GOLD_THEME;
   const emp = rops().employee;
   const p = emp.profile;
+  const myParty = state.session.backendPartyId;
   const section = (title, inner) => '<div style="padding:16px 20px 0;"><div style="' + ROPS_CAIRO + 'font-weight:800;font-size:14px;color:' + C.text + ';margin-bottom:8px;">' + title + '</div>' + inner + '</div>';
-  const list = (l, id, emptyText, rowHTML) => l.loading && !l.loaded ? '<div style="' + ROPS_AR + 'font-size:12px;color:' + C.textFaint + ';">جارٍ التحميل من الخادم…</div>'
+  const list = (l, id, emptyText, rowHTML) => l.loading && !l.loaded ? '<div id="' + id + '-loading" style="' + ROPS_AR + 'font-size:12px;color:' + C.textFaint + ';">جارٍ التحميل من الخادم…</div>'
     : l.error ? '<div id="' + id + '-error" style="padding:10px 12px;border-radius:10px;background:' + C.dangerSoft + ';color:' + C.danger + ';' + ROPS_AR + 'font-size:12px;">' + escapeHtml(l.error) + '</div>'
     : l.items.length === 0 ? '<div id="' + id + '-empty" style="' + ROPS_AR + 'font-size:12px;color:' + C.textGhost + ';">' + emptyText + '</div>'
     : l.items.map(rowHTML).join("");
   const availBtn = (value, label) => '<button class="rops-availability" data-availability="' + value + '" ' + (emp.availabilityBusy ? 'disabled ' : '') + 'style="flex:1;padding:9px 0;border-radius:10px;cursor:pointer;' + ROPS_CAIRO + 'font-weight:700;font-size:12px;border:1px solid ' + (p && p.availability === value ? theme.border : C.glassBorder) + ';background:' + (p && p.availability === value ? theme.soft : C.glass) + ';color:' + C.text + ';">' + label + '</button>';
+  const actionBtn = (cls, idAttr, id, label) => '<button class="' + cls + '" ' + idAttr + '="' + escapeHtml(id) + '" ' + (emp.busyId ? 'disabled ' : '') + 'style="margin-top:6px;padding:7px 14px;border-radius:9px;border:none;cursor:pointer;background:linear-gradient(135deg, ' + (theme.bright || theme.accent) + ', ' + theme.accent + ');color:#1A1408;' + ROPS_CAIRO + 'font-weight:800;font-size:12px;">' + label + '</button>';
+  const noticeHTML = emp.notice
+    ? '<div id="rops-employee-notice" data-kind="' + (emp.noticeOk ? "success" : "error") + '" style="margin:12px 20px 0;padding:10px 14px;border-radius:11px;background:' + (emp.noticeOk ? theme.soft : C.dangerSoft) + ';' + ROPS_AR + 'font-size:12px;color:' + (emp.noticeOk ? C.text : C.danger) + ';">' + escapeHtml(emp.notice) + '</div>'
+    : "";
+  const profileLine = p
+    ? '<div style="margin-top:6px;' + ROPS_AR + 'font-size:11px;color:' + C.textFaint + ';">الحد المتزامن: ' + escapeHtml(String(p.maxConcurrentRequests)) + ' · الأنواع: ' + (p.allowedServiceTypes.length ? escapeHtml(p.allowedServiceTypes.join(", ")) : "—") + '</div>'
+    : "";
+  const offersHTML = list(emp.offers, "rops-offers", "لا توجد عروض حالياً", (o) =>
+    '<div class="rops-offer-row" data-offer-id="' + escapeHtml(o.id) + '" data-request-id="' + escapeHtml(o.serviceRequestId) + '" style="padding:8px 0;border-top:1px solid ' + C.glassBorder + ';' + ROPS_AR + 'font-size:11.5px;color:' + C.text + ';">' +
+      '<div style="direction:ltr;text-align:left;line-height:1.7;">offer: ' + escapeHtml(o.id) + '<br>request: ' + escapeHtml(o.serviceRequestId) + '<br>offered_at: ' + realOpsTime(o.offeredAt) + '<br>expires_at: ' + realOpsTime(o.expiresAt) + '</div>' +
+      '<div style="color:' + C.textFaint + ';">حالة العرض: <b class="rops-offer-state">PENDING</b> (يعرض الخادم العروض المعلّقة فقط؛ الانتهاء يديره الخادم)</div>' +
+      actionBtn("rops-claim", "data-offer-id", o.id, "استلام الطلب") + '</div>');
+  const requestsHTML = list(emp.requests, "rops-myreq", "لا توجد طلبات نشطة مسندة إليك", (x) => {
+    const mine = x.assignedEmployeePartyId === myParty;
+    return '<div class="rops-myreq-row" data-request-id="' + escapeHtml(x.id) + '" data-status="' + escapeHtml(String(x.status)) + '" style="padding:8px 0;border-top:1px solid ' + C.glassBorder + ';' + ROPS_AR + 'font-size:11.5px;color:' + C.text + ';">' +
+      '<div style="display:flex;justify-content:space-between;gap:8px;"><span style="direction:ltr;">' + escapeHtml(x.id) + '</span>' + realServiceRequestStatusBadgeHTML(x.status) + '</div>' +
+      '<div style="color:' + C.textFaint + ';line-height:1.7;">service_type: ' + escapeHtml(String(x.serviceType)) + ' · target: ' + (x.targetIdentifier === null ? "—" : escapeHtml(String(x.targetIdentifier))) +
+        ' · transaction: ' + (x.transactionId ? escapeHtml(String(x.transactionId)) : "—") + '<br>' + realOpsTime(x.createdAt) + ' → ' + realOpsTime(x.updatedAt) + '</div>' +
+      (mine && x.status === "ASSIGNED" ? actionBtn("rops-start", "data-request-id", x.id, "بدء التنفيذ") : "") +
+      (mine && x.status === "IN_PROGRESS" ? actionBtn("rops-complete", "data-request-id", x.id, "إكمال الطلب") : "") + '</div>';
+  });
+  const refreshBtn = (id) => '<button id="' + id + '" style="margin-top:6px;padding:6px 12px;border-radius:9px;cursor:pointer;background:rgba(255,255,255,0.05);border:1px solid ' + C.glassBorder + ';color:' + C.textDim + ';font-size:11px;">تحديث</button>';
   return '' +
     '<div style="padding:20px 20px 0;display:flex;align-items:center;justify-content:space-between;">' +
       '<div><div style="' + ROPS_AR + 'font-size:12px;color:' + C.textDim + ';">واجهة الموظف (النظام الفعلي)</div>' +
-      '<div id="rops-employee-party" style="' + ROPS_CAIRO + 'font-weight:800;font-size:13px;color:' + C.text + ';direction:ltr;text-align:left;">' + escapeHtml(state.session.backendPartyId || "") + '</div></div>' +
+      '<div id="rops-employee-party" style="' + ROPS_CAIRO + 'font-weight:800;font-size:13px;color:' + C.text + ';direction:ltr;text-align:left;">' + escapeHtml(myParty || "") + '</div></div>' +
       '<button id="btn-real-employee-logout" aria-label="تسجيل الخروج" style="width:38px;height:38px;border-radius:11px;background:' + C.glass + ';border:1px solid ' + C.glassBorder + ';display:flex;align-items:center;justify-content:center;cursor:pointer;">' + Icons.X(16, C.textDim) + '</button>' +
-    '</div>' +
-    (emp.notice ? '<div id="rops-employee-notice" style="margin:12px 20px 0;padding:10px 14px;border-radius:11px;background:' + C.dangerSoft + ';' + ROPS_AR + 'font-size:12px;color:' + C.danger + ';">' + escapeHtml(emp.notice) + '</div>' : "") +
-    section("التوفر", '<div id="rops-availability" data-availability="' + (p ? escapeHtml(p.availability) : "") + '" style="display:flex;gap:8px;">' + availBtn("ONLINE", "متاح (ONLINE)") + availBtn("OFFLINE", "غير متاح (OFFLINE)") + '</div>' +
-      (p ? '<div style="margin-top:6px;' + ROPS_AR + 'font-size:11px;color:' + C.textFaint + ';">الحد المتزامن: ' + escapeHtml(String(p.maxConcurrentRequests)) + ' · الأنواع: ' + (p.allowedServiceTypes.length ? escapeHtml(p.allowedServiceTypes.join(", ")) : "—") + '</div>' : "")) +
-    section("عروضي", '<div id="rops-my-offers">' + list(emp.offers, "rops-offers", "لا توجد عروض حالياً", (o) =>
-      '<div class="rops-offer-row" data-offer-id="' + escapeHtml(o.id) + '" style="padding:8px 0;border-top:1px solid ' + C.glassBorder + ';' + ROPS_AR + 'font-size:11.5px;color:' + C.text + ';direction:ltr;text-align:left;">request: ' + escapeHtml(o.serviceRequestId) + '<br>expires_at: ' + realOpsTime(o.expiresAt) + '</div>') + '</div>' +
-      '<button id="btn-rops-offers-refresh" style="margin-top:6px;padding:6px 12px;border-radius:9px;cursor:pointer;background:rgba(255,255,255,0.05);border:1px solid ' + C.glassBorder + ';color:' + C.textDim + ';font-size:11px;">تحديث</button>') +
-    section("طلباتي", '<div id="rops-my-requests">' + list(emp.requests, "rops-myreq", "لا توجد طلبات مسندة إليك", (x) =>
-      '<div class="rops-myreq-row" data-request-id="' + escapeHtml(x.id) + '" data-status="' + escapeHtml(String(x.status)) + '" style="padding:8px 0;border-top:1px solid ' + C.glassBorder + ';' + ROPS_AR + 'font-size:11.5px;color:' + C.text + ';"><div style="display:flex;justify-content:space-between;gap:8px;"><span style="direction:ltr;">' + escapeHtml(x.id) + '</span>' + realServiceRequestStatusBadgeHTML(x.status) + '</div><div style="color:' + C.textFaint + ';">service_type: ' + escapeHtml(String(x.serviceType)) + '</div></div>') + '</div>' +
-      '<button id="btn-rops-myreq-refresh" style="margin-top:6px;padding:6px 12px;border-radius:9px;cursor:pointer;background:rgba(255,255,255,0.05);border:1px solid ' + C.glassBorder + ';color:' + C.textDim + ';font-size:11px;">تحديث</button>') +
-    '<div style="padding:14px 20px 24px;' + ROPS_AR + 'font-size:11px;color:' + C.textFaint + ';">أساس واجهة الموظف: التوفر والعروض والطلبات من الخادم فقط. تنفيذ الاستلام/البدء/الإكمال في مرحلة لاحقة.</div>';
+    '</div>' + noticeHTML +
+    section("التوفر", '<div id="rops-availability" data-availability="' + (p ? escapeHtml(p.availability) : "") + '" style="display:flex;gap:8px;">' + availBtn("ONLINE", "متاح (ONLINE)") + availBtn("OFFLINE", "غير متاح (OFFLINE)") + '</div>' + profileLine) +
+    section("عروضي", '<div id="rops-my-offers">' + offersHTML + '</div>' + refreshBtn("btn-rops-offers-refresh")) +
+    section("طلباتي النشطة", '<div id="rops-my-requests">' + requestsHTML + '</div>' + refreshBtn("btn-rops-myreq-refresh") +
+      '<div id="rops-myreq-note" style="margin-top:6px;' + ROPS_AR + 'font-size:11px;color:' + C.textFaint + ';">يعرض الخادم هنا الطلبات المسندة (ASSIGNED) وقيد التنفيذ (IN_PROGRESS) فقط؛ بعد الإكمال يختفي الطلب من هذه القائمة ويبقى COMPLETED على الخادم.</div>') +
+    '<div style="padding:14px 20px 24px;' + ROPS_AR + 'font-size:11px;color:' + C.textFaint + ';">الحالة والتوزيع والعروض والانتهاء والتزامن كلها يديرها الخادم؛ هذه الشاشة تستدعي المسارات وتعرض نتيجتها فقط.</div>';
 }
 
 function bindRealOperationsEvents() {
@@ -31237,6 +31302,9 @@ function bindRealOperationsEvents() {
   if ($("btn-rops-member-add")) $("btn-rops-member-add").onclick = () => changeRealOpsGroupMember(true);
   if ($("btn-rops-member-remove")) $("btn-rops-member-remove").onclick = () => changeRealOpsGroupMember(false);
   document.querySelectorAll(".rops-availability").forEach((btn) => { btn.onclick = () => setRealEmployeeAvailability(btn.getAttribute("data-availability")); });
+  document.querySelectorAll(".rops-claim").forEach((btn) => { btn.onclick = () => claimRealEmployeeOffer(btn.getAttribute("data-offer-id")); });
+  document.querySelectorAll(".rops-start").forEach((btn) => { btn.onclick = () => startRealEmployeeRequest(btn.getAttribute("data-request-id")); });
+  document.querySelectorAll(".rops-complete").forEach((btn) => { btn.onclick = () => completeRealEmployeeRequest(btn.getAttribute("data-request-id")); });
   if ($("btn-rops-offers-refresh")) $("btn-rops-offers-refresh").onclick = () => loadRealEmployeeOffers();
   if ($("btn-rops-myreq-refresh")) $("btn-rops-myreq-refresh").onclick = () => loadRealEmployeeRequests();
   if ($("btn-real-employee-logout")) $("btn-real-employee-logout").onclick = () => {
