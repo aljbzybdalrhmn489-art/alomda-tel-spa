@@ -34,7 +34,9 @@ if (!process.env.DATABASE_URL) {
 runStep(['src/infrastructure/db/migrate-cli.ts']);
 runStep(['src/app/bootstrap-admin-cli.ts']);
 
-const server = spawn('node', ['--experimental-strip-types', 'src/main.ts'], {
+// REAL TRANSACTIONS V1: the app is started through e2e-main.mts — the SAME startApplication() as src/main.ts,
+// plus an idempotent E2E seed and the backend's existing commissionCandidatePolicies composition override.
+const server = spawn('node', ['--experimental-strip-types', path.resolve(__dirname, 'e2e-main.mts')], {
   cwd: backendDir,
   env: process.env,
   stdio: 'inherit',

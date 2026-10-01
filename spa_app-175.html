@@ -1009,6 +1009,8 @@ const ADMIN_NAV_ITEMS = [
   { id: "customers", label: "العملاء", icon: "UserCog", description: "إدارة سجلات العملاء وربطهم بالوكيل المسؤول عنهم" },
   { id: "providers", label: "المزوّدون", icon: "Building2", description: "إدارة مزوّدي الخدمات وربطهم بالمنتجات" },
   { id: "agentsBackend", label: "الوكلاء (النظام الفعلي)", icon: "Users", description: "إدارة الوكلاء عبر الخادم الفعلي (حساب دخول + رصيد مشتق من دفتر الأستاذ)" },
+  { id: "servicesBackend", label: "الخدمات (النظام الفعلي)", icon: "Layers", description: "إدارة كتالوج الخدمات عبر الخادم الفعلي (Service Authority): الكود، استراتيجية التنفيذ، الحجز، والحالة" },
+  { id: "transactionsBackend", label: "المعاملات (النظام الفعلي)", icon: "Receipt", description: "إنشاء ومتابعة معاملات حقيقية عبر الخادم: الحالة، الجدول الزمني، وحجز المبلغ" },
   { id: "telecomCompanies", label: "شركات الاتصالات", icon: "RadioTower", description: "إدارة شركات الاتصالات وباقاتها ومنتجاتها" },
   { id: "wifi", label: "الواي فاي", icon: "Wifi", description: "إدارة منظومة الواي فاي: ملاك الشبكات، الشبكات، والمخزون" },
   { id: "games", label: "الألعاب", icon: "Gamepad2", description: "إدارة كتالوج الألعاب والمنتجات الرقمية" },
@@ -4451,6 +4453,9 @@ const ApiClient = {
     if (opts.auth !== false && state.session.accessToken) {
       headers["Authorization"] = "Bearer " + state.session.accessToken;
     }
+    // REAL TRANSACTIONS V1: a call may supply extra headers (e.g. Idempotency-Key). Merged into
+    // the same request, never a second HTTP client.
+    if (opts.headers) Object.assign(headers, opts.headers);
     let response;
     try {
       response = await fetch(url, {
@@ -4689,6 +4694,63 @@ const BackendAgentApi = {
 };
 
 /**
+ * SERVICES ADMIN (real backend) — Service Authority Phase 1 API
+ * (`service-admin-routes.ts`), same one-wrapper-per-real-route discipline
+ * as BackendAgentApi above. Exactly the six ratified routes; no endpoint
+ * and no payload field is invented. `code` is immutable server-side (the
+ * PATCH body carries only name / fulfillment_strategy / requires_hold).
+ */
+const BackendServiceApi = {
+  list() { return ApiClient.get("/api/v1/admin/services"); },
+  get(id) { return ApiClient.get("/api/v1/admin/services/" + encodeURIComponent(id)); },
+  create(payload) { return ApiClient.post("/api/v1/admin/services", payload); },
+  update(id, patch) { return ApiClient.patch("/api/v1/admin/services/" + encodeURIComponent(id), patch); },
+  activate(id) { return ApiClient.post("/api/v1/admin/services/" + encodeURIComponent(id) + "/activate", undefined); },
+  deactivate(id) { return ApiClient.post("/api/v1/admin/services/" + encodeURIComponent(id) + "/deactivate", undefined); },
+};
+
+/**
+ * SERVICE_BACKEND_DIRECTORY — the real Service Catalog's own local mirror,
+ * deliberately separate from MANUAL_SERVICE_CONFIGURATION_DIRECTORY (the
+ * pre-existing mock "الخدمات" module's own array, untouched). It is only
+ * ever refilled from `GET /api/v1/admin/services`; nothing here is a
+ * second service model or a source of truth.
+ */
+const SERVICE_BACKEND_DIRECTORY = [];
+function findServiceBackendById(id) {
+  return SERVICE_BACKEND_DIRECTORY.find((x) => x.id === id) || null;
+}
+function mapBackendServiceToDirectoryRecord(dto) {
+  return {
+    id: dto.id,
+    code: dto.code,
+    name: dto.name,
+    fulfillmentStrategy: dto.fulfillment_strategy, // MANUAL | PROVIDER
+    requiresHold: dto.requires_hold === true,
+    status: dto.status, // DRAFT | ACTIVE | INACTIVE — the real backend vocabulary
+    createdAt: dto.created_at,
+    updatedAt: dto.updated_at,
+  };
+}
+async function loadServicesBackendFromBackend() {
+  const sv = state.admin.modules.servicesBackend;
+  sv.loading = true; sv.loadError = null; sv.notice = null;
+  render();
+  const result = await BackendServiceApi.list();
+  sv.loading = false;
+  if (result.status === 401) { handleApiUnauthorized(); return; }
+  if (!result.ok) {
+    sv.loadError = describeApiError(result);
+    render();
+    return;
+  }
+  const mapped = result.data.map(mapBackendServiceToDirectoryRecord);
+  SERVICE_BACKEND_DIRECTORY.length = 0;
+  SERVICE_BACKEND_DIRECTORY.push(...mapped);
+  render();
+}
+
+/**
  * `GET /api/v1/auth/me` — lets this SPA tell an Admin identity (holds a
  * role) apart from an ownership-only identity such as an Agent (holds no
  * role at all) after a real login, so it can route to the right screen.
@@ -4706,7 +4768,61 @@ const BackendAuthApi = {
  */
 const BackendWalletApi = {
   getBalance(currency) { return ApiClient.get("/api/v1/wallet/balance?currency=" + encodeURIComponent(currency)); },
+  // READ ONLY: the authenticated actor's own ACTIVE MAIN holds (each carries its transaction_id).
+  getHolds(currency) { return ApiClient.get("/api/v1/wallet/holds?currency=" + encodeURIComponent(currency)); },
 };
+
+/**
+ * REAL TRANSACTIONS V1 — `transaction-routes.ts`, exactly the four routes that exist.
+ * create() sends ONLY service_id (the service CODE), package_id, target_identifier and
+ * form_values: the backend owns fulfillment_strategy, requires_hold, price, gateway,
+ * commission and provider mapping, and none of them can be supplied from here.
+ * POST /transactions answers 202 for a NEWLY created transaction and 200 for an
+ * idempotent replay of the same Idempotency-Key.
+ */
+const BackendTransactionApi = {
+  create(serviceId, packageId, targetIdentifier, formValues, idempotencyKey) {
+    return ApiClient.post(
+      "/api/v1/transactions",
+      { service_id: serviceId, package_id: packageId, target_identifier: targetIdentifier, form_values: formValues },
+      { headers: { "Idempotency-Key": idempotencyKey } }
+    );
+  },
+  get(transactionId) { return ApiClient.get("/api/v1/transactions/" + encodeURIComponent(transactionId)); },
+  timeline(transactionId) { return ApiClient.get("/api/v1/transactions/" + encodeURIComponent(transactionId) + "/timeline"); },
+  list(limit, cursor) {
+    const params = [];
+    if (limit !== undefined && limit !== null) params.push("limit=" + encodeURIComponent(limit));
+    if (cursor) params.push("cursor=" + encodeURIComponent(cursor));
+    return ApiClient.get("/api/v1/transactions" + (params.length ? "?" + params.join("&") : ""));
+  },
+};
+
+/** One UUID per create submission (never derived from the payload). */
+function generateIdempotencyKey() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (ch) => {
+    const r = Math.floor(Math.random() * 16);
+    return (ch === "x" ? r : (r & 3) | 8).toString(16);
+  });
+}
+
+/** The real-transaction screen's own state (lives in state.session, so every logout path clears it; never persisted). */
+function freshRealTransactionsState() {
+  return {
+    form: { serviceCode: "", packageId: "", targetIdentifier: "", formValuesText: "", submitting: false, error: null },
+    // The submission currently being (re)tried: {key, payload}. A retry reuses the SAME key and payload.
+    submission: null,
+    lastResult: null, // {httpStatus, data, correlationId, idempotencyKey}
+    lastError: null, // {httpStatus, code, correlationId}
+    list: { loading: false, loadingMore: false, error: null, loaded: false, items: [], nextCursor: null, hasMore: false },
+    detail: { id: null, loading: false, error: null, tx: null, timeline: [], timelineError: null, holds: null, holdsError: null, holdsCurrency: null },
+  };
+}
+function rtx() {
+  if (!state.session.realTransactions) state.session.realTransactions = freshRealTransactionsState();
+  return state.session.realTransactions;
+}
 
 /**
  * AGENT_BACKEND_DIRECTORY — the real-backend counterpart's own local
@@ -4808,7 +4924,7 @@ function renderMyWalletHomeScreen() {
         balanceBodyHTML +
         '<button id="btn-my-wallet-refresh" style="margin-top:14px;padding:8px 16px;border-radius:10px;background:rgba(255,255,255,0.06);border:1px solid ' + C.glassBorder + ';color:' + (theme.bright || theme.accent) + ';font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:12px;cursor:pointer;">تحديث</button>' +
       '</div>' +
-    '</div>';
+    '</div>' + RealTransactionsPanelHTML(theme);
 }
 
 /**
@@ -11459,6 +11575,7 @@ const ADMIN_ACTION_PERMISSION_DIRECTORY = [
   { id: "adminactionperm_providers_manage", key: "admin.action.providers.manage", label: "إدارة المزوّدين", description: "إضافة أو تعديل بيانات المزوّد، أو تغيير حالته (نشط/معطّل)" },
   { id: "adminactionperm_providers_manageaccounts", key: "admin.action.providers.manageAccounts", label: "إدارة حسابات المزوّدين", description: "إضافة أو تعديل حساب مزوّد (شمال/جنوب)، أو تغيير حالته" },
   { id: "adminactionperm_agentsbackend_manage", key: "admin.action.agentsBackend.manage", label: "إدارة الوكلاء (النظام الفعلي)", description: "إضافة أو تعديل بيانات وكيل حقيقي على الخادم، أو تفعيله/إيقافه" },
+  { id: "adminactionperm_servicesbackend_manage", key: "admin.action.servicesBackend.manage", label: "إدارة الخدمات (النظام الفعلي)", description: "إضافة أو تعديل خدمة على الخادم، أو تفعيلها/إيقافها" },
   { id: "adminactionperm_wifi_generatecards", key: "admin.action.wifi.generateCards", label: "توليد بطاقات الواي فاي", description: "إصدار دفعات جديدة من بطاقات الواي فاي" },
   { id: "adminactionperm_commissions_editpricing", key: "admin.action.commissions.editPricing", label: "تعديل التسعير والعمولات", description: "تعديل سياسات العمولة، العملات، قواعد التسعير، البوابات، الفئات التجارية، وربط مزوّدي الاتصالات" },
   { id: "adminactionperm_commissions_settle", key: "admin.action.commissions.settle", label: "تسوية العمولات", description: "تنفيذ تسوية (صرف) عمولات الوكلاء المستحقة" },
@@ -17768,6 +17885,8 @@ function freshSessionState() {
     // comment on why this distinguishes it from an Admin identity).
     backendPartyId: null,
     myWallet: { loading: false, error: null, currency: "YER", data: null },
+    // REAL TRANSACTIONS V1 — in-memory only (see persistAuthState): a reload always refetches.
+    realTransactions: freshRealTransactionsState(),
   };
 }
 /** Fixes a real regression: state.admin.modules.wifi.networksWorkspace
@@ -17915,7 +18034,7 @@ function persistAuthState() {
   // PHASE: AGENT + WALLET/BALANCE + EXISTING TRANSACTION V1 — `myWallet`
   // is excluded too: a cached balance is exactly the kind of "stale data
   // presented as fresh" §16 forbids. A reload always refetches it live.
-  const persistable = Object.assign({}, state.session, { refreshToken: null, myWallet: { loading: false, error: null, currency: "YER", data: null } });
+  const persistable = Object.assign({}, state.session, { refreshToken: null, myWallet: { loading: false, error: null, currency: "YER", data: null }, realTransactions: freshRealTransactionsState() });
   PersistenceStore.save("session", persistable);
 }
 /**
@@ -19357,6 +19476,25 @@ const state = {
           zoneCode: "SOUTH", // "SOUTH" | "NORTH" | "SA" — the three frozen zones
           loginIdentifier: "",
           password: "",
+          submitting: false,
+          error: null,
+        },
+      },
+      // SERVICES ADMIN (real backend) — talks ONLY to /api/v1/admin/services.
+      // Never reads or writes MANUAL_SERVICE_CONFIGURATION_DIRECTORY (the
+      // pre-existing local "الخدمات" module's own array).
+      servicesBackend: {
+        loading: false,
+        loadError: null,
+        notice: null,
+        serviceForm: {
+          open: false,
+          mode: "add", // "add" | "edit"
+          editingServiceId: null,
+          code: "",
+          name: "",
+          fulfillmentStrategy: "MANUAL", // "MANUAL" | "PROVIDER"
+          requiresHold: "true", // "true" | "false" — forced true for MANUAL
           submitting: false,
           error: null,
         },
@@ -30029,6 +30167,477 @@ async function toggleAgentBackendStatus(agentId) {
   await loadAgentsBackendFromBackend();
 }
 
+/**
+ * SERVICES ADMIN (real backend) — Service Authority Phase 1. A new,
+ * additive module mirroring AdminAgentsBackendModuleHTML's own structure
+ * (loading / error+retry / notice / empty / list + add / form dialog).
+ * Rules this screen restates but never decides: MANUAL requires a hold
+ * (requires_hold is shown fixed and is never sent as false); the backend
+ * re-validates everything and its error message is shown as-is.
+ */
+const SERVICE_BACKEND_STRATEGY_OPTIONS = [
+  { value: "MANUAL", label: "يدوي (MANUAL) — يُنفّذه موظف" },
+  { value: "PROVIDER", label: "مزوّد (PROVIDER) — يُنفّذه مزوّد خارجي" },
+];
+function serviceBackendLifecycleBadge(status) {
+  // The real backend vocabulary, never collapsed. DRAFT and INACTIVE can
+  // be activated; ACTIVE can be deactivated (DRAFT -> INACTIVE is not a
+  // backend transition, so it is never offered).
+  if (status === "ACTIVE") return { label: "نشط", color: "#5FBF8F", nextAction: "deactivate" };
+  if (status === "DRAFT") return { label: "مسودة", color: "#C9A44C", nextAction: "activate" };
+  if (status === "INACTIVE") return { label: "معطّل", color: "#E0667A", nextAction: "activate" };
+  return { label: escapeHtml(String(status)), color: "#8A8A8A", nextAction: null };
+}
+function formatServiceBackendTimestamp(iso) {
+  return typeof iso === "string" ? escapeHtml(iso.slice(0, 16).replace("T", " ")) : "";
+}
+function AdminServicesBackendModuleHTML(theme) {
+  const canManage = currentAccountHasAdminActionPermission("admin.action.servicesBackend.manage");
+  const sv = state.admin.modules.servicesBackend;
+
+  if (sv.loading) {
+    return '<div id="admin-services-backend-loading" style="padding:30px 0;text-align:center;font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:12.5px;color:' + C.textFaint + ';">جارٍ تحميل الخدمات من الخادم…</div>';
+  }
+  if (sv.loadError) {
+    return '<div id="admin-services-backend-error" style="padding:16px;border-radius:12px;background:' + C.dangerSoft + ';font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:12.5px;color:' + C.danger + ';text-align:center;">' + escapeHtml(sv.loadError) +
+      '<div style="margin-top:10px;"><button id="btn-admin-services-backend-retry" style="padding:8px 16px;border-radius:9px;border:1px solid ' + C.danger + ';background:transparent;color:' + C.danger + ';cursor:pointer;font-family:Cairo,sans-serif;font-weight:700;font-size:12px;">إعادة المحاولة</button></div></div>';
+  }
+
+  const noticeHTML = sv.notice
+    ? '<div id="admin-services-backend-notice" style="margin-bottom:10px;padding:10px 14px;border-radius:11px;background:' + C.dangerSoft + ';font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:12px;color:' + C.danger + ';">' + escapeHtml(sv.notice) + '</div>'
+    : "";
+
+  let rowsHTML = SERVICE_BACKEND_DIRECTORY.map((x) => AdminServiceBackendRowHTML(x, canManage)).join("");
+  if (SERVICE_BACKEND_DIRECTORY.length === 0) {
+    rowsHTML = '<div id="admin-services-backend-empty" style="padding:20px 0;text-align:center;font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:12px;color:' + C.textGhost + ';">لا توجد خدمات بعد على الخادم الفعلي</div>';
+  }
+  const addButtonHTML = canManage
+    ? '<button id="btn-admin-service-backend-add" style="width:100%;display:flex;align-items:center;justify-content:center;gap:7px;padding:11px 0;border-radius:11px;cursor:pointer;background:linear-gradient(135deg, ' + (theme.bright || theme.accent) + ', ' + theme.accent + ');border:none;margin-bottom:6px;">' +
+        Icons.Plus(13, "#1A1408") + '<span style="font-family:\'IBM Plex Sans Arabic\',sans-serif;font-weight:700;font-size:12.5px;color:#1A1408;">إضافة خدمة</span>' +
+      '</button>'
+    : "";
+  const formDialogHTML = sv.serviceForm.open ? AdminServiceBackendFormDialogHTML(theme) : "";
+  return noticeHTML + addButtonHTML + '<div id="admin-services-backend-list">' + rowsHTML + '</div>' + formDialogHTML;
+}
+function AdminServiceBackendRowHTML(x, canManage) {
+  const badge = serviceBackendLifecycleBadge(x.status);
+  const toggleIcon = badge.nextAction === "deactivate" ? "Pause" : "CircleCheck";
+  const toggleLabel = badge.nextAction === "deactivate" ? "تعطيل" : "تفعيل";
+  const actionsHTML = canManage
+    ? '<button class="admin-service-backend-edit" data-service-id="' + escapeHtml(x.id) + '" data-service-code="' + escapeHtml(x.code) + '" aria-label="تعديل" style="width:26px;height:26px;border-radius:7px;background:rgba(255,255,255,0.05);border:1px solid ' + C.glassBorder + ';display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;">' + Icons.Pencil(11, C.textDim) + '</button>' +
+      (badge.nextAction
+        ? '<button class="admin-service-backend-toggle" data-service-id="' + escapeHtml(x.id) + '" data-service-code="' + escapeHtml(x.code) + '" data-next-action="' + badge.nextAction + '" aria-label="' + toggleLabel + '" style="width:26px;height:26px;border-radius:7px;background:rgba(255,255,255,0.05);border:1px solid ' + C.glassBorder + ';display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;">' + Icons[toggleIcon](11, C.textDim) + '</button>'
+        : '')
+    : "";
+  const holdLabel = x.requiresHold ? "حجز المبلغ: نعم" : "حجز المبلغ: لا";
+  return '<div class="admin-service-backend-row" data-service-code="' + escapeHtml(x.code) + '" style="display:flex;align-items:center;gap:8px;padding:12px 0;border-top:1px solid ' + C.glassBorder + ';">' +
+    '<div style="flex:1;min-width:0;">' +
+      '<div style="font-family:Cairo,sans-serif;font-weight:700;font-size:13px;color:' + C.text + ';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(x.name) + '</div>' +
+      '<div class="service-backend-meta" style="font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:10.5px;color:' + C.textFaint + ';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' +
+        '<span class="service-backend-code" style="direction:ltr;unicode-bidi:embed;">' + escapeHtml(x.code) + '</span> · ' +
+        '<span class="service-backend-strategy">' + escapeHtml(x.fulfillmentStrategy) + '</span> · ' +
+        '<span class="service-backend-hold" data-requires-hold="' + (x.requiresHold ? "true" : "false") + '">' + holdLabel + '</span>' +
+      '</div>' +
+      '<div style="font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:10px;color:' + C.textGhost + ';">أُنشئت ' + formatServiceBackendTimestamp(x.createdAt) + ' · حُدّثت ' + formatServiceBackendTimestamp(x.updatedAt) + '</div>' +
+    '</div>' +
+    '<span class="service-backend-status" data-status="' + escapeHtml(String(x.status)) + '">' + AdminTableBadgeHTML(badge.label, badge.color) + '</span>' +
+    actionsHTML +
+  '</div>';
+}
+function openAddServiceBackendForm() {
+  state.admin.modules.servicesBackend.serviceForm = {
+    open: true, mode: "add", editingServiceId: null,
+    code: "", name: "", fulfillmentStrategy: "MANUAL", requiresHold: "true",
+    submitting: false, error: null,
+  };
+  render();
+}
+function openEditServiceBackendForm(serviceId) {
+  const x = findServiceBackendById(serviceId);
+  if (!x) return;
+  state.admin.modules.servicesBackend.serviceForm = {
+    open: true, mode: "edit", editingServiceId: x.id,
+    code: x.code, name: x.name, fulfillmentStrategy: x.fulfillmentStrategy, requiresHold: x.requiresHold ? "true" : "false",
+    submitting: false, error: null,
+  };
+  render();
+}
+function AdminServiceBackendFormDialogHTML(theme) {
+  const f = state.admin.modules.servicesBackend.serviceForm;
+  const title = f.mode === "add" ? "إضافة خدمة" : "تعديل الخدمة";
+  const errorHTML = f.error ? '<div id="service-backend-form-error" style="margin-bottom:14px;padding:10px 14px;border-radius:11px;background:' + C.dangerSoft + ';font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:12px;color:' + C.danger + ';text-align:center;">' + escapeHtml(f.error) + '</div>' : "";
+  let fieldsHTML = errorHTML;
+  if (f.mode === "add") {
+    fieldsHTML += AdminFormFieldHTML({ id: "sbf-code", key: "code", label: "كود الخدمة (لا يمكن تغييره لاحقاً)", type: "text", required: true }, escapeHtml(f.code), null);
+  } else {
+    // `code` is immutable on the backend (PATCH never accepts it) — shown, never editable.
+    fieldsHTML += '<div style="margin-bottom:14px;"><div style="font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:12px;color:' + C.textDim + ';margin-bottom:7px;">كود الخدمة</div>' +
+      '<div id="sbf-code-readonly" style="direction:ltr;text-align:left;font-family:Cairo,sans-serif;font-size:13.5px;color:' + C.text + ';padding:10px 14px;border-radius:11px;border:1px solid ' + C.glassBorder + ';background:rgba(255,255,255,0.02);">' + escapeHtml(f.code) + '</div></div>';
+  }
+  fieldsHTML += AdminFormFieldHTML({ id: "sbf-name", key: "name", label: "اسم الخدمة", type: "text", required: true }, escapeHtml(f.name), null);
+  fieldsHTML += AdminFormFieldHTML({ id: "sbf-strategy", key: "fulfillmentStrategy", label: "استراتيجية التنفيذ", type: "select", options: SERVICE_BACKEND_STRATEGY_OPTIONS }, f.fulfillmentStrategy, null);
+  if (f.fulfillmentStrategy === "MANUAL") {
+    // MANUAL always holds funds: shown fixed, never selectable as "no" and never sent as false.
+    fieldsHTML += '<div style="margin-bottom:14px;"><div style="font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:12px;color:' + C.textDim + ';margin-bottom:7px;">حجز المبلغ</div>' +
+      '<div id="sbf-requires-hold-fixed" data-requires-hold="true" style="font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:12.5px;color:' + C.text + ';padding:10px 14px;border-radius:11px;border:1px solid ' + C.glassBorder + ';background:rgba(255,255,255,0.02);">نعم — إلزامي للخدمة اليدوية (MANUAL)</div></div>';
+  } else {
+    fieldsHTML += AdminFormFieldHTML({ id: "sbf-requires-hold", key: "requiresHold", label: "حجز المبلغ", type: "select", options: [{ value: "true", label: "نعم (حجز المبلغ)" }, { value: "false", label: "لا (بدون حجز)" }] }, f.requiresHold, null);
+  }
+  const footerHTML = '' +
+    '<div style="display:flex;gap:10px;margin-top:6px;">' +
+      '<button id="btn-admin-service-backend-form-cancel" style="flex:1;padding:12px 0;border-radius:12px;cursor:pointer;background:rgba(255,255,255,0.05);border:1px solid ' + C.glassBorder + ';color:' + C.textDim + ';font-family:Cairo,sans-serif;font-weight:700;font-size:13px;">إلغاء</button>' +
+      '<button id="btn-admin-service-backend-form-save" style="flex:2;padding:12px 0;border-radius:12px;border:none;cursor:pointer;background:linear-gradient(135deg, ' + (theme.bright || theme.accent) + ', ' + theme.accent + ');color:#1A1408;font-family:Cairo,sans-serif;font-weight:800;font-size:13.5px;">' + (f.mode === "add" ? "إضافة" : "حفظ") + '</button>' +
+    '</div>';
+  return AdminFormDialogShellHTML("admin-service-backend-form-overlay", title, fieldsHTML, footerHTML);
+}
+async function saveServiceBackendForm() {
+  const f = state.admin.modules.servicesBackend.serviceForm;
+  if (f.submitting) return;
+  if (!currentAccountHasAdminActionPermission("admin.action.servicesBackend.manage")) { f.error = "لا تملك صلاحية تنفيذ هذا الإجراء"; render(); return; }
+  const code = f.code.trim();
+  const name = f.name.trim();
+  if ((f.mode === "add" && !code) || !name) { f.error = "جميع الحقول المطلوبة يجب تعبئتها"; render(); return; }
+  if (f.fulfillmentStrategy !== "MANUAL" && f.fulfillmentStrategy !== "PROVIDER") { f.error = "استراتيجية التنفيذ غير صالحة"; render(); return; }
+  // MANUAL always requires a hold: the value is forced here, so a
+  // MANUAL + requires_hold=false request can never leave this form. The
+  // backend independently re-validates and remains authoritative.
+  const requiresHold = f.fulfillmentStrategy === "MANUAL" ? true : f.requiresHold === "true";
+
+  f.submitting = true; f.error = null;
+  render();
+
+  if (f.mode === "add") {
+    const created = await BackendServiceApi.create({ code, name, fulfillment_strategy: f.fulfillmentStrategy, requires_hold: requiresHold });
+    if (created.status === 401) { handleApiUnauthorized(); return; }
+    if (!created.ok) { f.submitting = false; f.error = describeApiError(created); render(); return; }
+  } else {
+    const updated = await BackendServiceApi.update(f.editingServiceId, { name, fulfillment_strategy: f.fulfillmentStrategy, requires_hold: requiresHold });
+    if (updated.status === 401) { handleApiUnauthorized(); return; }
+    if (!updated.ok) { f.submitting = false; f.error = describeApiError(updated); render(); return; }
+  }
+  state.admin.modules.servicesBackend.serviceForm.open = false;
+  await loadServicesBackendFromBackend();
+  state.admin.modules.servicesBackend.notice = null;
+}
+/**
+ * Lifecycle: exactly the backend's own transitions — activate from DRAFT
+ * or INACTIVE, deactivate from ACTIVE — chosen by the service's OWN
+ * current real status (never a local flip). The backend re-validates.
+ */
+async function toggleServiceBackendStatus(serviceId) {
+  if (!currentAccountHasAdminActionPermission("admin.action.servicesBackend.manage")) return;
+  const x = findServiceBackendById(serviceId);
+  if (!x) return;
+  const badge = serviceBackendLifecycleBadge(x.status);
+  if (!badge.nextAction) return;
+  const result = badge.nextAction === "deactivate" ? await BackendServiceApi.deactivate(serviceId) : await BackendServiceApi.activate(serviceId);
+  if (result.status === 401) { handleApiUnauthorized(); return; }
+  if (!result.ok) {
+    state.admin.modules.servicesBackend.notice = describeApiError(result);
+    render();
+    return;
+  }
+  await loadServicesBackendFromBackend();
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   REAL TRANSACTIONS V1 — create / list / detail / timeline / hold, against
+   the real backend ONLY (BackendTransactionApi, BackendWalletApi.getHolds).
+   It is NOT the mock purchase flow: nothing here reads or writes the local
+   purchase, balance or operations models, and a failed real call never
+   falls back to them. The form is a TEMPORARY technical form (service code
+   + package_id) until a service/package catalog API exists. The backend owns
+   fulfillment strategy, hold requirement, price, gateway and commission.
+   ════════════════════════════════════════════════════════════════════ */
+// Real Transaction vocabulary (12 states, shown verbatim). CANCELLED is NOT a transaction status:
+// a cancelled MANUAL transaction is stored as FAILED (the timeline tells HELD -> FAILED by a user).
+const REAL_TRANSACTION_STATUS_META = {
+  CREATED: { label: "تم الاستلام", color: "#8FA3BF", note: "أُنشئت المعاملة ولم يكتمل التحقق والتسعير بعد" },
+  VALIDATED: { label: "تم التحقق والتسعير", color: "#6FA8DC", note: "السعر مثبّت — لم يُحجز المبلغ بعد" },
+  HELD: { label: "بانتظار التنفيذ اليدوي", color: "#C9A44C", note: "تم حجز المبلغ — لا تنتقل المعاملة اليدوية إلى المعالجة عبر مزوّد" },
+  QUEUED: { label: "في قائمة الانتظار", color: "#E0923C", note: "مسار المزوّد" },
+  PROCESSING: { label: "قيد المعالجة", color: "#E0923C", note: "مسار المزوّد" },
+  SUCCESS: { label: "نجحت", color: "#5FBF8F", note: "اكتمل التنفيذ" },
+  FAILED: { label: "فشلت", color: "#E0667A", note: "انتهت المعاملة بالفشل" },
+  PENDING_PROVIDER: { label: "بانتظار نتيجة المزوّد", color: "#E0923C", note: "نتيجة المزوّد غير محسومة" },
+  MANUAL_RESOLUTION: { label: "تسوية يدوية مطلوبة", color: "#D98FBF", note: "تتطلب مراجعة" },
+  SETTLED: { label: "تمت التسوية", color: "#3FA97A", note: "اكتملت التسوية المحاسبية" },
+  REVERSED: { label: "مُعكوسة", color: "#8A8A8A", note: "عُكست بعد التسوية" },
+  EXPIRED: { label: "منتهية", color: "#8A8A8A", note: "انتهت صلاحية المعاملة قبل الحجز" },
+};
+function realTransactionStatusBadgeHTML(status) {
+  const meta = REAL_TRANSACTION_STATUS_META[status] || { label: escapeHtml(String(status)), color: "#8A8A8A" };
+  return '<span class="rtx-status" data-status="' + escapeHtml(String(status)) + '">' + AdminTableBadgeHTML(meta.label, meta.color) +
+    ' <span style="direction:ltr;unicode-bidi:embed;font-family:Cairo,sans-serif;font-size:10px;color:' + C.textFaint + ';">' + escapeHtml(String(status)) + '</span></span>';
+}
+function formatRealTransactionPrice(price) {
+  if (!price || typeof price.amount === "undefined") return "غير متاح";
+  return escapeHtml(String(price.amount)) + " " + escapeHtml(String(price.currency));
+}
+function formatRealTransactionTime(iso) {
+  return typeof iso === "string" ? escapeHtml(iso.slice(0, 19).replace("T", " ")) : "";
+}
+/** One honest message per failure class, followed by the backend's own message/details. */
+function describeRealTransactionError(result) {
+  if (result.networkError || result.status === 401 || result.status === 403) return describeApiError(result);
+  const code = result.error && result.error.code;
+  let prefix = "";
+  if (code === "INSUFFICIENT_FUNDS") prefix = "الرصيد غير كافٍ لحجز مبلغ المعاملة. ";
+  else if (code === "IDEMPOTENCY_CONFLICT") prefix = "مفتاح التكرار (Idempotency-Key) استُخدم سابقاً مع محتوى مختلف — لن تُعاد المحاولة تلقائياً. ";
+  else if (result.status === 404) prefix = "غير موجود. ";
+  else if (result.status === 400) prefix = "بيانات غير صالحة. ";
+  else if (result.status === 409) prefix = "تعارض. ";
+  else if (result.status === 422) prefix = "رُفض الطلب. ";
+  else if (result.status >= 500) prefix = "خطأ في الخادم. ";
+  return prefix + describeApiError(result);
+}
+
+async function performRealTransactionCreate() {
+  const t = rtx();
+  const submission = t.submission;
+  if (!submission || t.form.submitting) return;
+  t.form.submitting = true; t.form.error = null; t.lastError = null;
+  render();
+  const p = submission.payload;
+  const result = await BackendTransactionApi.create(p.serviceCode, p.packageId, p.targetIdentifier, p.formValues, submission.key);
+  t.form.submitting = false;
+  if (result.status === 401) { handleApiUnauthorized(); return; }
+  if (!result.ok) {
+    t.lastResult = null;
+    t.lastError = { httpStatus: result.status, code: (result.error && result.error.code) || "", correlationId: (result.error && result.error.correlationId) || null };
+    t.form.error = describeRealTransactionError(result);
+    render();
+    return;
+  }
+  t.lastResult = {
+    httpStatus: result.status, // 202 = newly created, 200 = idempotent replay
+    data: result.data,
+    correlationId: result.meta ? result.meta.correlationId : null,
+    idempotencyKey: submission.key,
+  };
+  render();
+  loadRealTransactionsList();
+}
+/** A NEW submission: validates the form and gets its own Idempotency-Key. */
+function submitRealTransactionForm() {
+  const t = rtx();
+  const f = t.form;
+  if (f.submitting) return;
+  const serviceCode = f.serviceCode.trim();
+  const packageId = f.packageId.trim();
+  if (!serviceCode || !packageId) { f.error = "رمز الخدمة والباقة مطلوبان"; render(); return; }
+  let formValues = null;
+  if (f.formValuesText.trim()) {
+    try { formValues = JSON.parse(f.formValuesText); } catch (e) { f.error = "form_values يجب أن يكون JSON صالحاً"; render(); return; }
+    if (formValues === null || typeof formValues !== "object" || Array.isArray(formValues)) { f.error = "form_values يجب أن يكون كائن JSON"; render(); return; }
+  }
+  t.submission = {
+    key: generateIdempotencyKey(),
+    payload: { serviceCode, packageId, targetIdentifier: f.targetIdentifier.trim() || null, formValues },
+  };
+  performRealTransactionCreate();
+}
+/** Retry of the SAME submission: same Idempotency-Key, same stored payload. */
+function retryRealTransactionSubmission() {
+  if (!rtx().submission) return;
+  performRealTransactionCreate();
+}
+
+async function loadRealTransactionsList() {
+  const l = rtx().list;
+  l.loading = true; l.error = null;
+  render();
+  const result = await BackendTransactionApi.list(20, null);
+  l.loading = false;
+  if (result.status === 401) { handleApiUnauthorized(); return; }
+  if (!result.ok) { l.error = describeRealTransactionError(result); l.items = []; l.nextCursor = null; l.hasMore = false; l.loaded = true; render(); return; }
+  l.items = result.data;
+  l.nextCursor = result.meta ? result.meta.nextCursor : null;
+  l.hasMore = !!(result.meta && result.meta.hasMore);
+  l.loaded = true;
+  render();
+}
+async function loadMoreRealTransactions() {
+  const l = rtx().list;
+  if (!l.hasMore || !l.nextCursor || l.loadingMore) return;
+  l.loadingMore = true; l.error = null;
+  render();
+  const result = await BackendTransactionApi.list(20, l.nextCursor);
+  l.loadingMore = false;
+  if (result.status === 401) { handleApiUnauthorized(); return; }
+  if (!result.ok) { l.error = describeRealTransactionError(result); render(); return; }
+  l.items = l.items.concat(result.data);
+  l.nextCursor = result.meta ? result.meta.nextCursor : null;
+  l.hasMore = !!(result.meta && result.meta.hasMore);
+  render();
+}
+async function openRealTransactionDetail(transactionId) {
+  const d = rtx().detail;
+  Object.assign(d, { id: transactionId, loading: true, error: null, tx: null, timeline: [], timelineError: null, holds: null, holdsError: null, holdsCurrency: null });
+  render();
+  const [txResult, timelineResult] = await Promise.all([BackendTransactionApi.get(transactionId), BackendTransactionApi.timeline(transactionId)]);
+  if (txResult.status === 401 || timelineResult.status === 401) { handleApiUnauthorized(); return; }
+  d.loading = false;
+  if (!txResult.ok) { d.error = describeRealTransactionError(txResult); render(); return; }
+  d.tx = txResult.data;
+  if (timelineResult.ok) d.timeline = timelineResult.data; else d.timelineError = describeRealTransactionError(timelineResult);
+  render();
+  // The hold lives in the price currency; without a price there is nothing to ask for.
+  const currency = d.tx.locked_customer_price ? d.tx.locked_customer_price.currency : null;
+  if (!currency) return;
+  d.holdsCurrency = currency;
+  const holdsResult = await BackendWalletApi.getHolds(currency);
+  if (holdsResult.status === 401) { handleApiUnauthorized(); return; }
+  if (rtx().detail.id !== transactionId) return; // another transaction was opened meanwhile
+  if (!holdsResult.ok) d.holdsError = describeRealTransactionError(holdsResult); else d.holds = holdsResult.data;
+  render();
+}
+function closeRealTransactionDetail() {
+  rtx().detail = freshRealTransactionsState().detail;
+  render();
+}
+
+function RealTransactionsPanelHTML(theme) {
+  const t = rtx();
+  const f = t.form;
+  const inputStyle = 'width:100%;background:rgba(255,255,255,0.03);border:1px solid ' + C.glassBorder + ';border-radius:11px;padding:10px 14px;color:' + C.text + ';outline:none;font-family:Cairo,sans-serif;font-size:13px;box-sizing:border-box;direction:ltr;text-align:left;';
+  const labelStyle = 'font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:12px;color:' + C.textDim + ';margin:10px 0 6px;';
+  const field = (id, key, label, value, placeholder) =>
+    '<div style="' + labelStyle + '">' + label + '</div><input id="' + id + '" class="rtx-input" data-field="' + key + '" value="' + escapeHtml(value) + '" placeholder="' + placeholder + '" style="' + inputStyle + '" />';
+  const errorHTML = f.error
+    ? '<div id="rtx-form-error" data-http-status="' + (t.lastError ? t.lastError.httpStatus : "") + '" data-error-code="' + escapeHtml(t.lastError ? t.lastError.code : "") + '" style="margin-top:12px;padding:10px 14px;border-radius:11px;background:' + C.dangerSoft + ';font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:12px;color:' + C.danger + ';">' + escapeHtml(f.error) +
+        (t.lastError && t.lastError.correlationId ? '<div style="margin-top:4px;font-size:10px;direction:ltr;text-align:left;">correlationId: ' + escapeHtml(t.lastError.correlationId) + '</div>' : '') + '</div>'
+    : "";
+  const retryHTML = t.submission
+    ? '<button id="btn-rtx-retry" ' + (f.submitting ? 'disabled ' : '') + 'style="width:100%;margin-top:8px;padding:9px 0;border-radius:11px;cursor:pointer;background:rgba(255,255,255,0.05);border:1px solid ' + C.glassBorder + ';color:' + C.textDim + ';font-family:Cairo,sans-serif;font-weight:700;font-size:12px;">إعادة المحاولة لنفس الطلب (نفس مفتاح التكرار)</button>' +
+      '<div id="rtx-current-key" data-idempotency-key="' + escapeHtml(t.submission.key) + '" style="margin-top:4px;font-size:10px;color:' + C.textFaint + ';direction:ltr;text-align:left;">Idempotency-Key: ' + escapeHtml(t.submission.key) + '</div>'
+    : "";
+  const formHTML =
+    '<div id="rtx-form" style="padding:14px;border-radius:14px;border:1px solid ' + C.glassBorder + ';background:rgba(255,255,255,0.02);">' +
+      '<div style="font-family:Cairo,sans-serif;font-weight:800;font-size:14px;color:' + C.text + ';">إنشاء معاملة (نموذج تقني مؤقت)</div>' +
+      '<div id="rtx-temp-note" style="margin-top:6px;font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:11px;color:' + C.textFaint + ';">يتم إدخال رمز الخدمة والباقه حاليًا بشكل مؤقت إلى حين اكتمال كتالوج الخدمات والباقات.</div>' +
+      field("rtx-service-code", "serviceCode", "رمز الخدمة (service code)", f.serviceCode, "e.g. svc-manual") +
+      field("rtx-package-id", "packageId", "الباقة (package_id)", f.packageId, "e.g. pkg-1") +
+      field("rtx-target-identifier", "targetIdentifier", "المعرّف المستهدف (اختياري)", f.targetIdentifier, "") +
+      '<div style="' + labelStyle + '">form_values (JSON اختياري)</div><textarea id="rtx-form-values" class="rtx-input" data-field="formValuesText" rows="2" style="' + inputStyle + 'resize:vertical;">' + escapeHtml(f.formValuesText) + '</textarea>' +
+      errorHTML +
+      '<button id="btn-rtx-submit" ' + (f.submitting ? 'disabled ' : '') + 'style="width:100%;margin-top:12px;padding:11px 0;border-radius:11px;border:none;cursor:pointer;background:linear-gradient(135deg, ' + (theme.bright || theme.accent) + ', ' + theme.accent + ');color:#1A1408;font-family:Cairo,sans-serif;font-weight:800;font-size:13px;">' + (f.submitting ? "جارٍ الإرسال…" : "إنشاء المعاملة") + '</button>' +
+      retryHTML +
+    '</div>';
+
+  let resultHTML = "";
+  if (t.lastResult) {
+    const r = t.lastResult;
+    const d = r.data || {};
+    const outcome = r.httpStatus === 202 ? "CREATED" : (r.httpStatus === 200 ? "REPLAYED" : "OTHER");
+    const outcomeLabel = outcome === "CREATED" ? "تم إنشاء معاملة جديدة (HTTP 202)" : (outcome === "REPLAYED" ? "إعادة لنفس الطلب — المعاملة نفسها (HTTP 200)" : "HTTP " + r.httpStatus);
+    const row = (label, value, cls) => '<div style="display:flex;gap:8px;justify-content:space-between;padding:4px 0;"><span style="color:' + C.textDim + ';">' + label + '</span><span' + (cls ? ' class="' + cls + '"' : '') + ' style="direction:ltr;unicode-bidi:embed;color:' + C.text + ';">' + value + '</span></div>';
+    resultHTML =
+      '<div id="rtx-result" data-http-status="' + r.httpStatus + '" data-outcome="' + outcome + '" data-transaction-id="' + escapeHtml(String(d.transaction_id)) + '" data-idempotency-key="' + escapeHtml(r.idempotencyKey) + '" style="margin-top:14px;padding:14px;border-radius:14px;border:1px solid ' + theme.border + ';background:' + theme.soft + ';font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:12px;">' +
+        '<div style="font-family:Cairo,sans-serif;font-weight:800;font-size:13.5px;color:' + C.text + ';margin-bottom:8px;">' + outcomeLabel + '</div>' +
+        row("transaction_id", escapeHtml(String(d.transaction_id)), "rtx-result-id") +
+        row("client_ref", escapeHtml(String(d.client_ref))) +
+        row("الحالة", realTransactionStatusBadgeHTML(d.status)) +
+        row("السعر المثبّت", formatRealTransactionPrice(d.locked_customer_price), "rtx-result-price") +
+        row("correlationId", escapeHtml(String(r.correlationId || ""))) +
+      '</div>';
+  }
+
+  const l = t.list;
+  let listBody;
+  if (l.loading && !l.loaded) listBody = '<div style="padding:16px 0;text-align:center;font-size:12px;color:' + C.textFaint + ';">جارٍ تحميل المعاملات من الخادم…</div>';
+  else if (l.error && l.items.length === 0) listBody = '<div id="rtx-list-error" style="padding:12px;border-radius:11px;background:' + C.dangerSoft + ';font-size:12px;color:' + C.danger + ';">' + escapeHtml(l.error) + '</div>';
+  else if (l.items.length === 0) listBody = '<div id="rtx-list-empty" style="padding:16px 0;text-align:center;font-size:12px;color:' + C.textGhost + ';">لا توجد معاملات بعد</div>';
+  else listBody = l.items.map((x) =>
+    '<div class="rtx-row" data-transaction-id="' + escapeHtml(x.transaction_id) + '" style="display:flex;align-items:center;gap:8px;padding:10px 0;border-top:1px solid ' + C.glassBorder + ';cursor:pointer;">' +
+      '<div style="flex:1;min-width:0;"><div style="direction:ltr;text-align:left;font-size:11px;color:' + C.text + ';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(x.transaction_id) + '</div>' +
+      '<div style="font-size:10.5px;color:' + C.textFaint + ';">' + formatRealTransactionPrice(x.locked_customer_price) + '</div></div>' +
+      realTransactionStatusBadgeHTML(x.status) +
+    '</div>').join("");
+  const moreHTML = (l.error && l.items.length > 0 ? '<div id="rtx-list-error" style="margin-top:8px;font-size:12px;color:' + C.danger + ';">' + escapeHtml(l.error) + '</div>' : '') +
+    (l.hasMore ? '<button id="btn-rtx-load-more" ' + (l.loadingMore ? 'disabled ' : '') + 'style="width:100%;margin-top:8px;padding:9px 0;border-radius:11px;cursor:pointer;background:rgba(255,255,255,0.05);border:1px solid ' + C.glassBorder + ';color:' + C.textDim + ';font-family:Cairo,sans-serif;font-weight:700;font-size:12px;">' + (l.loadingMore ? "جارٍ التحميل…" : "تحميل المزيد") + '</button>' : '');
+  const listHTML =
+    '<div id="rtx-list" style="margin-top:16px;">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;"><span style="font-family:Cairo,sans-serif;font-weight:800;font-size:14px;color:' + C.text + ';">معاملاتي</span>' +
+      '<button id="btn-rtx-list-refresh" style="padding:6px 12px;border-radius:9px;cursor:pointer;background:rgba(255,255,255,0.05);border:1px solid ' + C.glassBorder + ';color:' + C.textDim + ';font-family:Cairo,sans-serif;font-weight:700;font-size:11px;">تحديث</button></div>' +
+      listBody + moreHTML +
+    '</div>';
+
+  return '<div id="rtx-panel" style="padding:20px 20px 24px;">' + formHTML + resultHTML + listHTML + RealTransactionDetailHTML(theme) + '</div>';
+}
+
+function RealTransactionDetailHTML(theme) {
+  const d = rtx().detail;
+  if (!d.id) return "";
+  const box = (inner) => '<div id="rtx-detail" data-transaction-id="' + escapeHtml(d.id) + '" style="margin-top:16px;padding:14px;border-radius:14px;border:1px solid ' + C.glassBorder + ';background:rgba(255,255,255,0.02);font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:12px;color:' + C.text + ';">' + inner + '</div>';
+  const closeBtn = '<button id="btn-rtx-detail-close" style="padding:5px 12px;border-radius:9px;cursor:pointer;background:rgba(255,255,255,0.05);border:1px solid ' + C.glassBorder + ';color:' + C.textDim + ';font-size:11px;">إغلاق</button>';
+  if (d.loading) return box('<div>جارٍ تحميل المعاملة…</div>');
+  if (d.error) return box('<div id="rtx-detail-error" style="color:' + C.danger + ';">' + escapeHtml(d.error) + '</div><div style="margin-top:8px;">' + closeBtn + '</div>');
+  const tx = d.tx;
+  const meta = REAL_TRANSACTION_STATUS_META[tx.status];
+  const row = (label, value) => '<div style="display:flex;gap:8px;justify-content:space-between;padding:4px 0;"><span style="color:' + C.textDim + ';">' + label + '</span><span style="direction:ltr;unicode-bidi:embed;">' + value + '</span></div>';
+
+  let timelineHTML;
+  if (d.timelineError) timelineHTML = '<div style="color:' + C.danger + ';">' + escapeHtml(d.timelineError) + '</div>';
+  else if (d.timeline.length === 0) timelineHTML = '<div style="color:' + C.textGhost + ';">لا توجد سجلات</div>';
+  else timelineHTML = d.timeline.map((e) =>
+    '<div class="rtx-timeline-item" data-from="' + escapeHtml(String(e.from_status)) + '" data-to="' + escapeHtml(String(e.to_status)) + '" style="padding:6px 0;border-top:1px solid ' + C.glassBorder + ';">' +
+      '<div style="direction:ltr;text-align:left;font-family:Cairo,sans-serif;font-size:12px;">' + escapeHtml(e.from_status === null ? "—" : String(e.from_status)) + ' → ' + escapeHtml(String(e.to_status)) + '</div>' +
+      '<div style="font-size:10.5px;color:' + C.textFaint + ';direction:ltr;text-align:left;">' + formatRealTransactionTime(e.at) + ' · ' + escapeHtml(String(e.actor_kind)) + (e.reason ? ' · ' + escapeHtml(String(e.reason)) : '') + '</div>' +
+    '</div>').join("");
+
+  // A cancelled MANUAL transaction is stored as FAILED; say so, but never invent a CANCELLED status.
+  const cancelledByUser = tx.status === "FAILED" && d.timeline.some((e) => e.from_status === "HELD" && e.to_status === "FAILED" && e.actor_kind === "USER");
+  const cancelNote = cancelledByUser
+    ? '<div id="rtx-cancel-note" style="margin-top:8px;padding:8px 10px;border-radius:9px;background:' + C.dangerSoft + ';color:' + C.danger + ';">أُلغيت هذه المعاملة قبل التنفيذ (الحالة المخزّنة على الخادم: FAILED).</div>'
+    : "";
+
+  let holdHTML;
+  if (!tx.locked_customer_price) holdHTML = '<div id="rtx-hold" data-state="unknown" style="color:' + C.textGhost + ';">لا يوجد سعر مثبّت بعد، لذا لا يمكن الاستعلام عن الحجز.</div>';
+  else if (d.holdsError) holdHTML = '<div id="rtx-hold" data-state="error" style="color:' + C.danger + ';">' + escapeHtml(d.holdsError) + '</div>';
+  else if (d.holds === null) holdHTML = '<div id="rtx-hold" data-state="loading" style="color:' + C.textFaint + ';">جارٍ تحميل الحجز…</div>';
+  else {
+    const hold = d.holds.find((h) => h.transaction_id === tx.transaction_id);
+    holdHTML = hold
+      ? '<div id="rtx-hold" data-state="active" data-hold-id="' + escapeHtml(hold.id) + '">' +
+          row("المبلغ", escapeHtml(String(hold.amount))) + row("العملة", escapeHtml(String(hold.currency))) + row("الحالة", escapeHtml(String(hold.status))) +
+          row("السبب", escapeHtml(hold.reason === null ? "—" : String(hold.reason))) + row("أُنشئ", formatRealTransactionTime(hold.created_at)) +
+          row("ينتهي", hold.expires_at === null ? "—" : formatRealTransactionTime(hold.expires_at)) + '</div>'
+      : '<div id="rtx-hold" data-state="none" style="color:' + C.textDim + ';">لا يوجد حجز نشط حالياً لهذه المعاملة.</div>';
+  }
+
+  return box(
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;"><span style="font-family:Cairo,sans-serif;font-weight:800;font-size:14px;">تفاصيل المعاملة</span>' + closeBtn + '</div>' +
+    row("transaction_id", escapeHtml(tx.transaction_id)) + row("client_ref", escapeHtml(String(tx.client_ref))) +
+    row("الحالة", realTransactionStatusBadgeHTML(tx.status)) +
+    row("السعر المثبّت", formatRealTransactionPrice(tx.locked_customer_price)) +
+    (meta ? '<div id="rtx-status-note" style="margin-top:4px;font-size:11px;color:' + C.textFaint + ';">' + escapeHtml(meta.note) + '</div>' : '') +
+    cancelNote +
+    '<div style="margin-top:12px;font-family:Cairo,sans-serif;font-weight:800;font-size:13px;">الحجز</div>' + holdHTML +
+    '<div style="margin-top:12px;font-family:Cairo,sans-serif;font-weight:800;font-size:13px;">الجدول الزمني</div><div id="rtx-timeline">' + timelineHTML + '</div>'
+  );
+}
+
+function AdminTransactionsBackendModuleHTML(theme) {
+  return RealTransactionsPanelHTML(theme);
+}
+
+function bindRealTransactionsEvents() {
+  const $ = (id) => document.getElementById(id);
+  // Typing only updates state (no render): a re-render would recreate the inputs mid-keystroke.
+  document.querySelectorAll(".rtx-input").forEach((input) => {
+    input.oninput = (e) => { rtx().form[input.getAttribute("data-field")] = e.target.value; };
+  });
+  if ($("btn-rtx-submit")) $("btn-rtx-submit").onclick = () => submitRealTransactionForm();
+  if ($("btn-rtx-retry")) $("btn-rtx-retry").onclick = () => retryRealTransactionSubmission();
+  if ($("btn-rtx-list-refresh")) $("btn-rtx-list-refresh").onclick = () => loadRealTransactionsList();
+  if ($("btn-rtx-load-more")) $("btn-rtx-load-more").onclick = () => loadMoreRealTransactions();
+  if ($("btn-rtx-detail-close")) $("btn-rtx-detail-close").onclick = () => closeRealTransactionDetail();
+  document.querySelectorAll(".rtx-row").forEach((row) => {
+    row.onclick = () => openRealTransactionDetail(row.getAttribute("data-transaction-id"));
+  });
+}
+
 const ADMIN_PROVIDER_FORM_FIELDS_INFO = [
   { id: "provf-name", key: "name", label: "اسم المزوّد", type: "text", required: true, placeholder: "مثال: مزوّد الشحن الرقمي" },
   { id: "provf-type", key: "type", label: "النوع", type: "select", options: [] }, // built fresh per render from PROVIDER_TYPES, see below
@@ -37175,6 +37784,8 @@ const ADMIN_MODULE_RENDERERS = {
   customers: AdminCustomersModuleHTML,
   providers: AdminProvidersModuleHTML,
   agentsBackend: AdminAgentsBackendModuleHTML,
+  servicesBackend: AdminServicesBackendModuleHTML,
+  transactionsBackend: AdminTransactionsBackendModuleHTML,
   telecomCompanies: AdminTelecomCompaniesModuleHTML,
   wifi: AdminWifiModuleHTML,
   games: AdminGamesModuleHTML,
@@ -37457,7 +38068,7 @@ function attachEvents() {
       state.session.loginForm.submitting = false;
       persistAuthState();
       render();
-      if (me.data.roles && me.data.roles.length === 0) loadMyWalletBalance();
+      if (me.data.roles && me.data.roles.length === 0) { loadMyWalletBalance(); loadRealTransactionsList(); }
       return;
     }
 
@@ -38330,6 +38941,14 @@ function attachEvents() {
       // "fresh entry always refetches from the real backend" discipline.
       if (moduleId === "agentsBackend") {
         loadAgentsBackendFromBackend();
+      }
+      // SERVICES ADMIN (real backend) — same discipline.
+      if (moduleId === "servicesBackend") {
+        loadServicesBackendFromBackend();
+      }
+      // REAL TRANSACTIONS V1 — fresh entry refetches from the real backend.
+      if (moduleId === "transactionsBackend") {
+        loadRealTransactionsList();
       }
     };
   });
@@ -39611,10 +40230,12 @@ function attachEvents() {
       const gt = state.admin.modules.games.templates;
       const pv = state.admin.modules.providers;
       const av = state.admin.modules.agentsBackend;
+      const sbv = state.admin.modules.servicesBackend;
       const targetForm = pv.accountForm.open ? pv.accountForm
         : pv.secretRefForm.open ? pv.secretRefForm
         : pv.mappingForm.open ? pv.mappingForm
         : av.agentForm.open ? av.agentForm
+        : sbv.serviceForm.open ? sbv.serviceForm
         : tc.companyForm.open ? tc.companyForm
         : tc.packageForm.open ? tc.packageForm
         : tc.categoryManager.form.open ? tc.categoryManager.form
@@ -39704,6 +40325,7 @@ function attachEvents() {
       state.admin.modules.providers.secretRefForm.open = false;
       state.admin.modules.providers.mappingForm.open = false;
       state.admin.modules.agentsBackend.agentForm.open = false;
+      state.admin.modules.servicesBackend.serviceForm.open = false;
       state.ownerWorkspace.createNetworkForm.open = false;
       state.admin.modules.operations.groupsView.groupForm.open = false;
       state.admin.modules.operations.routingView.ruleForm.open = false;
@@ -39951,6 +40573,21 @@ function attachEvents() {
   };
   if ($("btn-admin-agent-backend-form-save")) $("btn-admin-agent-backend-form-save").onclick = () => saveAgentBackendForm();
   if ($("btn-admin-agents-backend-retry")) $("btn-admin-agents-backend-retry").onclick = () => loadAgentsBackendFromBackend();
+  // SERVICES ADMIN (real backend)
+  if ($("btn-admin-service-backend-add")) $("btn-admin-service-backend-add").onclick = () => openAddServiceBackendForm();
+  document.querySelectorAll(".admin-service-backend-edit").forEach((btn) => {
+    btn.onclick = () => openEditServiceBackendForm(btn.getAttribute("data-service-id"));
+  });
+  document.querySelectorAll(".admin-service-backend-toggle").forEach((btn) => {
+    btn.onclick = () => toggleServiceBackendStatus(btn.getAttribute("data-service-id"));
+  });
+  if ($("btn-admin-service-backend-form-cancel")) $("btn-admin-service-backend-form-cancel").onclick = () => {
+    state.admin.modules.servicesBackend.serviceForm.open = false;
+    render();
+  };
+  if ($("btn-admin-service-backend-form-save")) $("btn-admin-service-backend-form-save").onclick = () => saveServiceBackendForm();
+  if ($("btn-admin-services-backend-retry")) $("btn-admin-services-backend-retry").onclick = () => loadServicesBackendFromBackend();
+  bindRealTransactionsEvents();
 
   /* ── Provider Account Admin (Phase 1) ── */
   document.querySelectorAll(".admin-provider-accounts").forEach((btn) => {
@@ -42362,11 +42999,19 @@ if (!hasAdministratorAccount()) {
   if (state.app.currentScreen === "adminPanel" && getSafeActiveAdminModuleId() === "agentsBackend" && state.session.accessToken) {
     loadAgentsBackendFromBackend();
   }
+  // SERVICES ADMIN (real backend) — same reload discipline.
+  if (state.app.currentScreen === "adminPanel" && getSafeActiveAdminModuleId() === "servicesBackend" && state.session.accessToken) {
+    loadServicesBackendFromBackend();
+  }
+  if (state.app.currentScreen === "adminPanel" && getSafeActiveAdminModuleId() === "transactionsBackend" && state.session.accessToken) {
+    loadRealTransactionsList();
+  }
   // "My Wallet" home — a reload landing directly here (persisted
   // currentScreen) never went through the login handler's own
   // loadMyWalletBalance() call above, so it is triggered once here too.
   if (state.app.currentScreen === "myWalletHome" && state.session.accessToken) {
     loadMyWalletBalance();
+    loadRealTransactionsList();
   }
 }
 
