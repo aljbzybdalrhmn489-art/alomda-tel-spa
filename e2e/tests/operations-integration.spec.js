@@ -192,3 +192,53 @@ test.describe('REAL OPERATIONS V1 (phase 1) — real backend', () => {
     expect(forbidden.message).toContain('لا تملك صلاحية');
   });
 });
+
+test.describe('REAL OPERATIONS V1 (phase 1) — Agent reload regression', () => {
+  // Regression for the boot defect found in Phase 1: reloading a role-less real identity used to throw
+  // "Cannot read properties of null (reading 'role')" and never restored the screen. An Agent (role-less, NO
+  // employee profile) must come back to My Wallet — not crash, and never be routed to the Employee Workspace.
+  test('Agent login -> My Wallet -> reload -> My Wallet (no crash, no Employee Workspace)', async ({ page }) => {
+    const pageErrors = [];
+    page.on('pageerror', (error) => pageErrors.push(error.message));
+    const suffix = String(Date.now());
+    const agentLogin = 'e2e-reload-agent-' + suffix;
+    const agentPassword = 'e2e-agent-password-' + suffix;
+
+    await page.goto('/');
+    await completeLocalSetupGateIfShown(page);
+    await loginWithRealBackend(page, ADMIN_LOGIN_IDENTIFIER, ADMIN_PASSWORD);
+    const agentSetup = await page.evaluate(async ({ login, password, tag }) => {
+      const created = await BackendAgentApi.create({
+        party_type: 'AGENT', account_number: 'RL-' + tag, display_name: 'E2E Reload Agent ' + tag, phone: '7' + tag.slice(-8),
+        zone_code: 'SOUTH', login_identifier: login, password,
+      });
+      if (!created.ok) return { ok: false };
+      const agents = await BackendAgentApi.list();
+      const agent = agents.data.find((a) => a.account_number === 'RL-' + tag);
+      const activated = await BackendAgentApi.activate(agent.id);
+      return { ok: activated.ok };
+    }, { login: agentLogin, password: agentPassword, tag: suffix });
+    expect(agentSetup.ok).toBe(true);
+    await page.click('#btn-admin-drawer-open');
+    await page.click('#btn-admin-logout');
+    await expect(page.locator('#unified-identifier-input')).toBeVisible({ timeout: 10_000 });
+
+    // Agent login: a role-less identity WITHOUT an employee profile lands on My Wallet.
+    await loginWithRealBackend(page, agentLogin, agentPassword);
+    await expect.poll(() => page.evaluate(() => state.app.currentScreen)).toBe('myWalletHome');
+    expect(await page.evaluate(() => state.session.role)).toBe('agentBackend');
+    await expect(page.locator('#btn-my-wallet-logout')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('#rops-employee-party')).toHaveCount(0);
+
+    // Reload: no crash, My Wallet again (the identity is re-asked from the backend), never the Employee Workspace.
+    await page.reload();
+    await expect(page.locator('#btn-my-wallet-logout')).toBeVisible({ timeout: 15_000 });
+    await expect.poll(() => page.evaluate(() => state.app.currentScreen)).toBe('myWalletHome');
+    expect(await page.evaluate(() => state.session.role)).toBe('agentBackend');
+    expect(await page.evaluate(() => state.session.backendPartyId)).toBeTruthy();
+    await expect(page.locator('#rops-employee-party')).toHaveCount(0);
+    await expect(page.locator('#rops-availability')).toHaveCount(0);
+    await expect(page.locator('#rtx-form')).toBeVisible({ timeout: 10_000 }); // the real transaction panel of My Wallet is back
+    expect(pageErrors).toEqual([]);
+  });
+});
