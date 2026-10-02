@@ -15,3 +15,20 @@ e2e/*.log
 # Claude Code's own local tooling directory — not project content.
 .claude/
 
+
+# --- Safety patterns (pre-GitHub): secrets, keys, backups, build output, logs ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+secrets/
+backups/
+*.dump
+coverage/
+temp/
+build/
+dist/
+*.log
+node_modules/

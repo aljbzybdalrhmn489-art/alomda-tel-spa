@@ -17707,13 +17707,22 @@ const ADMIN_ROLE_LABELS = {
  * same relationship a real system would maintain via application
  * logic whenever an administrator changes an entity's status).
  */
+/**
+ * DEMO seed password — deliberately NOT stored in this file. The seeded mock accounts below
+ * (employee / agent / customer demo identities) carry no plaintext credential. A demo or test
+ * session that needs to sign in to them sets `window.OMDA_DEMO_PASSWORD` (6+ characters) in an inline
+ * script BEFORE this file's own script element, exactly like `window.OMDA_API_BASE_URL`. When it is
+ * not set the value is null and no seeded demo account can sign in (authenticateAccount never matches a
+ * null password). Mock data only — unrelated to the real backend's authentication.
+ */
+const DEMO_SEED_PASSWORD = (typeof window !== "undefined" && typeof window.OMDA_DEMO_PASSWORD === "string" && window.OMDA_DEMO_PASSWORD.length >= 6) ? window.OMDA_DEMO_PASSWORD : null;
 const ACCOUNTS = [
-  { accountId: "acc_emp_001", loginIdentifier: "emp-support1", password: "employee123", role: "employee", status: "active", linkedEntityId: "emp_001" },
-  { accountId: "acc_emp_002", loginIdentifier: "emp-support2", password: "employee123", role: "employee", status: "disabled", linkedEntityId: "emp_002" },
-  { accountId: "acc_agt_001", loginIdentifier: "710012342", password: "agent123", role: "agent", status: "active", linkedEntityId: "agt_001" },
-  { accountId: "acc_agt_002", loginIdentifier: "730098765", password: "agent123", role: "agent", status: "active", linkedEntityId: "agt_002" },
-  { accountId: "acc_agt_003", loginIdentifier: "770055443", password: "agent123", role: "agent", status: "disabled", linkedEntityId: "agt_003" },
-  { accountId: "acc_agt_006", loginIdentifier: "730011223", password: "agent123", role: "agent", status: "active", linkedEntityId: "agt_006" },
+  { accountId: "acc_emp_001", loginIdentifier: "emp-support1", password: DEMO_SEED_PASSWORD, role: "employee", status: "active", linkedEntityId: "emp_001" },
+  { accountId: "acc_emp_002", loginIdentifier: "emp-support2", password: DEMO_SEED_PASSWORD, role: "employee", status: "disabled", linkedEntityId: "emp_002" },
+  { accountId: "acc_agt_001", loginIdentifier: "710012342", password: DEMO_SEED_PASSWORD, role: "agent", status: "active", linkedEntityId: "agt_001" },
+  { accountId: "acc_agt_002", loginIdentifier: "730098765", password: DEMO_SEED_PASSWORD, role: "agent", status: "active", linkedEntityId: "agt_002" },
+  { accountId: "acc_agt_003", loginIdentifier: "770055443", password: DEMO_SEED_PASSWORD, role: "agent", status: "disabled", linkedEntityId: "agt_003" },
+  { accountId: "acc_agt_006", loginIdentifier: "730011223", password: DEMO_SEED_PASSWORD, role: "agent", status: "active", linkedEntityId: "agt_006" },
   // Customer accounts (Phase 8h) — enables real Customer authentication
   // through the exact same unified login/ACCOUNTS mechanism every
   // other role already uses; no new login screen, no new auth
@@ -17724,9 +17733,9 @@ const ACCOUNTS = [
   // default (§ CUSTOMER_DIRECTORY's own linkedAgentId, all null) —
   // that remains an explicit, undecided business process, not assumed
   // here.
-  { accountId: "acc_cus_001", loginIdentifier: "711223344", password: "customer123", role: "customer", status: "active", linkedEntityId: "cus_001" },
-  { accountId: "acc_cus_002", loginIdentifier: "733445566", password: "customer123", role: "customer", status: "active", linkedEntityId: "cus_002" },
-  { accountId: "acc_cus_004", loginIdentifier: "125566778", password: "customer123", role: "customer", status: "active", linkedEntityId: "cus_004" },
+  { accountId: "acc_cus_001", loginIdentifier: "711223344", password: DEMO_SEED_PASSWORD, role: "customer", status: "active", linkedEntityId: "cus_001" },
+  { accountId: "acc_cus_002", loginIdentifier: "733445566", password: DEMO_SEED_PASSWORD, role: "customer", status: "active", linkedEntityId: "cus_002" },
+  { accountId: "acc_cus_004", loginIdentifier: "125566778", password: DEMO_SEED_PASSWORD, role: "customer", status: "active", linkedEntityId: "cus_004" },
 ];
 /** Resolves an account's own linked business record — the only place
  * this role-to-directory mapping exists. Returns null for a role with
@@ -17757,7 +17766,7 @@ function authenticateAccount(loginIdentifier, password) {
     return { success: false, error: "الرجاء إدخال بيانات الدخول وكلمة المرور" };
   }
 
-  const account = ACCOUNTS.find((a) => a.loginIdentifier === identifier && a.password === pass);
+  const account = ACCOUNTS.find((a) => a.loginIdentifier === identifier && a.password !== null && a.password === pass);
   if (!account) {
     return { success: false, error: "بيانات الدخول أو كلمة المرور غير صحيحة" };
   }
