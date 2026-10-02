@@ -123,6 +123,9 @@ test.describe('SPA ↔ Backend Integration V1 — Provider Admin, real backend',
     await page.locator('.admin-provider-account-secret').first().click();
     await page.fill('#pacf-secret-ref', secretValue);
     await page.click('#btn-admin-secret-ref-save');
+    // Wait for the save to finish and the dialog to close BEFORE asserting: while the dialog is still open (save in
+    // flight) the typed value is legitimately present in its own input, so asserting immediately raced the backend.
+    await expect(page.locator('#pacf-secret-ref')).toHaveCount(0, { timeout: 10_000 });
     await expect(page.locator('body')).not.toContainText(secretValue);
     // The account row now shows the "configured" indicator (secret_configured: true), never the value.
     const pageContentAfterSecret = await page.content();

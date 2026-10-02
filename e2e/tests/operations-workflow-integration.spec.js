@@ -147,10 +147,15 @@ test.describe('REAL OPERATIONS V1 (phase 2) — Employee workflow, real backend'
     await expect(myRequest(page, requestId)).toHaveCount(0, { timeout: 10_000 });
     expect(await backendRequest(page, requestId)).toEqual({ status: 'COMPLETED', assigned: employeePartyId });
     await expect(page.locator('#rops-myreq-note')).toContainText('ASSIGNED');
+    // The finished work now appears in the employee's own history (backend: ?view=history), not in the active list.
+    const historyRow = page.locator('.rops-hist-row[data-request-id="' + requestId + '"]');
+    await expect(historyRow).toHaveAttribute('data-status', 'COMPLETED', { timeout: 10_000 });
+    await expect(page.locator('#rops-hist-note')).toContainText('COMPLETED');
     await page.reload();
     await expect(page.locator('#rops-employee-party')).toHaveText(employeePartyId, { timeout: 15_000 });
     await expect(page.locator('#rops-my-requests')).not.toContainText('جارٍ التحميل');
     await expect(myRequest(page, requestId)).toHaveCount(0); // not an active request any more...
+    await expect(page.locator('.rops-hist-row[data-request-id="' + requestId + '"]')).toHaveAttribute('data-status', 'COMPLETED', { timeout: 15_000 }); // ...but it is in the history after a reload
     expect(await backendRequest(page, requestId)).toEqual({ status: 'COMPLETED', assigned: employeePartyId }); // ...and still COMPLETED on the backend after the reload
     expect(await callApi(page, 'startServiceRequest', requestId)).toEqual({ status: 409, code: 'CONFLICT' }); // nothing can move a COMPLETED request
   });

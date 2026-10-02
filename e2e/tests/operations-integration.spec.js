@@ -83,7 +83,9 @@ test.describe('REAL OPERATIONS V1 (phase 1) — real backend', () => {
 
     // 2) Employee operational profiles (NOT employee accounts) and a real 400.
     await page.click('.rops-tab[data-tab="employees"]');
-    const employeeRow = page.locator('.rops-emp-row', { hasText: SERVICE_TYPE });
+    // EXACT service-type match: a plain substring also matches employee B ('e2e-ops-b'), and the list order of two profiles
+    // seeded with the same created_at is not guaranteed — picking .first() of that set intermittently selected B.
+    const employeeRow = page.locator('.rops-emp-row', { hasText: new RegExp(SERVICE_TYPE + '(?![-\\w])') });
     await expect(employeeRow.first()).toBeVisible({ timeout: 10_000 });
     const employeePartyId = (await employeeRow.first().getAttribute('data-party-id')) || '';
     expect(employeePartyId).toMatch(/^[0-9a-f-]{36}$/);

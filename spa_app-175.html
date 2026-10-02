@@ -4851,6 +4851,7 @@ const BackendOperationsApi = {
   cancelServiceRequest(id, reason) { return ApiClient.post("/api/v1/operations/service-requests/" + encodeURIComponent(id) + "/cancel", reason ? { reason } : {}); }, // owner or operation:cancel_any
   dispatchServiceRequest(id) { return ApiClient.post("/api/v1/operations/service-requests/" + encodeURIComponent(id) + "/dispatch", undefined); }, // operation:dispatch
   listMyServiceRequests() { return ApiClient.get("/api/v1/operations/my/service-requests"); },
+  listMyServiceRequestHistory() { return ApiClient.get("/api/v1/operations/my/service-requests?view=history&limit=20"); }, // own COMPLETED/CANCELLED work, newest first
   listMyOffers() { return ApiClient.get("/api/v1/operations/my/offers"); },
   claimOffer(offerId) { return ApiClient.post("/api/v1/operations/offers/" + encodeURIComponent(offerId) + "/claim", undefined); },
   startServiceRequest(id) { return ApiClient.post("/api/v1/operations/service-requests/" + encodeURIComponent(id) + "/start", undefined); },
@@ -30759,7 +30760,7 @@ function freshRealOperationsState() {
       form: { open: false, name: "", description: "", submitting: false, error: null },
       member: { groupId: "", partyId: "", submitting: false, error: null },
     }),
-    employee: { profile: null, notice: null, noticeOk: false, busyId: null, availabilityBusy: false, offers: listState(), requests: listState() },
+    employee: { profile: null, notice: null, noticeOk: false, busyId: null, availabilityBusy: false, offers: listState(), requests: listState(), history: listState() },
   };
 }
 function rops() {
@@ -30808,6 +30809,7 @@ function loadRealIdentityHomeData() {
   if (state.app.currentScreen === "realEmployeeWorkspace") {
     loadRealEmployeeOffers();
     loadRealEmployeeRequests();
+    loadRealEmployeeHistory();
   } else {
     loadMyWalletBalance();
     loadRealTransactionsList();
@@ -31165,6 +31167,18 @@ async function loadRealEmployeeRequests() {
   l.loaded = true;
   render();
 }
+async function loadRealEmployeeHistory() {
+  const l = rops().employee.history;
+  l.loading = true; l.error = null;
+  render();
+  const result = await BackendOperationsApi.listMyServiceRequestHistory();
+  l.loading = false;
+  if (result.status === 401) { handleApiUnauthorized(); return; }
+  if (!result.ok) { l.error = describeRealOperationsError(result); l.items = []; l.loaded = true; render(); return; }
+  l.items = result.data.map(mapRealServiceRequest);
+  l.loaded = true;
+  render();
+}
 async function setRealEmployeeAvailability(availability) {
   const emp = rops().employee;
   if (emp.availabilityBusy) return;
@@ -31209,7 +31223,7 @@ async function performRealEmployeeAction(action, id) {
     emp.notice = describeRealEmployeeActionError(result, action);
     emp.noticeOk = false;
     render();
-    if (result.status === 404 || result.status === 409) { loadRealEmployeeOffers(); loadRealEmployeeRequests(); }
+    if (result.status === 404 || result.status === 409) { loadRealEmployeeOffers(); loadRealEmployeeRequests(); loadRealEmployeeHistory(); }
     return;
   }
   emp.notice = action === "claim" ? "تم استلام الطلب — حالته الآن " + result.data.status + " (من الخادم)."
@@ -31219,6 +31233,7 @@ async function performRealEmployeeAction(action, id) {
   render();
   loadRealEmployeeOffers();
   loadRealEmployeeRequests();
+  loadRealEmployeeHistory();
 }
 function claimRealEmployeeOffer(offerId) { return performRealEmployeeAction("claim", offerId); }
 function startRealEmployeeRequest(requestId) { return performRealEmployeeAction("start", requestId); }
@@ -31256,6 +31271,10 @@ function renderRealEmployeeWorkspaceScreen() {
       (mine && x.status === "ASSIGNED" ? actionBtn("rops-start", "data-request-id", x.id, "بدء التنفيذ") : "") +
       (mine && x.status === "IN_PROGRESS" ? actionBtn("rops-complete", "data-request-id", x.id, "إكمال الطلب") : "") + '</div>';
   });
+  const historyHTML = list(emp.history, "rops-hist", "لا يوجد سجل أعمال منتهية بعد", (x) =>
+    '<div class="rops-hist-row" data-request-id="' + escapeHtml(x.id) + '" data-status="' + escapeHtml(String(x.status)) + '" style="padding:8px 0;border-top:1px solid ' + C.glassBorder + ';' + ROPS_AR + 'font-size:12px;color:' + C.text + ';">' +
+      '<div style="display:flex;justify-content:space-between;gap:8px;"><span style="direction:ltr;">' + escapeHtml(x.id) + '</span>' + realServiceRequestStatusBadgeHTML(x.status) + '</div>' +
+      '<div style="color:' + C.textFaint + ';line-height:1.7;">service_type: ' + escapeHtml(String(x.serviceType)) + ' · transaction: ' + (x.transactionId ? escapeHtml(String(x.transactionId)) : "—") + '<br>' + realOpsTime(x.createdAt) + ' → ' + realOpsTime(x.updatedAt) + '</div></div>');
   const refreshBtn = (id) => '<button id="' + id + '" style="margin-top:6px;padding:6px 12px;border-radius:9px;cursor:pointer;background:rgba(255,255,255,0.05);border:1px solid ' + C.glassBorder + ';color:' + C.textDim + ';font-size:11px;">تحديث</button>';
   return '' +
     '<div style="padding:20px 20px 0;display:flex;align-items:center;justify-content:space-between;">' +
@@ -31267,6 +31286,8 @@ function renderRealEmployeeWorkspaceScreen() {
     section("عروضي", '<div id="rops-my-offers">' + offersHTML + '</div>' + refreshBtn("btn-rops-offers-refresh")) +
     section("طلباتي النشطة", '<div id="rops-my-requests">' + requestsHTML + '</div>' + refreshBtn("btn-rops-myreq-refresh") +
       '<div id="rops-myreq-note" style="margin-top:6px;' + ROPS_AR + 'font-size:11px;color:' + C.textFaint + ';">يعرض الخادم هنا الطلبات المسندة (ASSIGNED) وقيد التنفيذ (IN_PROGRESS) فقط؛ بعد الإكمال يختفي الطلب من هذه القائمة ويبقى COMPLETED على الخادم.</div>') +
+    section("سجل أعمالي (المكتملة والملغاة)", '<div id="rops-my-history">' + historyHTML + '</div>' + refreshBtn("btn-rops-hist-refresh") +
+      '<div id="rops-hist-note" style="margin-top:6px;' + ROPS_AR + 'font-size:11px;color:' + C.textFaint + ';">يعرض الخادم هنا أعمالك المنتهية فقط (COMPLETED / CANCELLED) — آخر 20 طلباً، ولا تظهر أعمال موظفين آخرين.</div>') +
     '<div style="padding:14px 20px 24px;' + ROPS_AR + 'font-size:11px;color:' + C.textFaint + ';">الحالة والتوزيع والعروض والانتهاء والتزامن كلها يديرها الخادم؛ هذه الشاشة تستدعي المسارات وتعرض نتيجتها فقط.</div>';
 }
 
@@ -31307,6 +31328,7 @@ function bindRealOperationsEvents() {
   document.querySelectorAll(".rops-complete").forEach((btn) => { btn.onclick = () => completeRealEmployeeRequest(btn.getAttribute("data-request-id")); });
   if ($("btn-rops-offers-refresh")) $("btn-rops-offers-refresh").onclick = () => loadRealEmployeeOffers();
   if ($("btn-rops-myreq-refresh")) $("btn-rops-myreq-refresh").onclick = () => loadRealEmployeeRequests();
+  if ($("btn-rops-hist-refresh")) $("btn-rops-hist-refresh").onclick = () => loadRealEmployeeHistory();
   if ($("btn-real-employee-logout")) $("btn-real-employee-logout").onclick = () => {
     state.session = freshSessionState();
     state.app.currentScreen = "login";
