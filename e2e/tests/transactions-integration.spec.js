@@ -53,20 +53,13 @@ async function openTransactionsModule(page) {
 }
 
 /**
- * The create form defaults to picking from the catalog (GET /api/v1/catalog). These scenarios use the seeded
- * service/packages, which are not catalog packages, so they use the explicit "manual technical entry" mode.
+ * The create form ONLY picks from the server catalog (GET /api/v1/catalog): the seeded service and its two
+ * packages are real, ACTIVE catalog packages (package identity), so the scenarios select them from the pickers.
  */
-async function ensureManualEntry(page) {
-  const toggle = page.locator('#rtx-entry-mode-toggle');
-  await expect(toggle).toBeVisible({ timeout: 10_000 });
-  if ((await toggle.getAttribute('data-mode')) === 'catalog') await toggle.click();
-  await expect(page.locator('#rtx-service-code')).toBeVisible();
-}
-
 async function fillForm(page, { service, pkg, target = '', formValues = '' }) {
-  await ensureManualEntry(page);
-  await page.fill('#rtx-service-code', service);
-  await page.fill('#rtx-package-id', pkg);
+  await expect(page.locator('#rtx-catalog-service')).toBeVisible({ timeout: 10_000 });
+  await page.selectOption('#rtx-catalog-service', service);
+  await page.selectOption('#rtx-catalog-package', pkg);
   await page.fill('#rtx-target-identifier', target);
   await page.fill('#rtx-form-values', formValues);
 }
@@ -103,13 +96,14 @@ test.describe('REAL TRANSACTIONS V1 — real backend', () => {
     await loginWithRealBackend(page, ADMIN_LOGIN_IDENTIFIER, ADMIN_PASSWORD);
     await openTransactionsModule(page);
 
-    await ensureManualEntry(page);
-    // The temporary technical form is labelled as such, with the required note, and exposes no backend-owned field.
-    await expect(page.locator('#rtx-temp-note')).toHaveText('يتم إدخال رمز الخدمة والباقه حاليًا بشكل مؤقت إلى حين اكتمال كتالوج الخدمات والباقات.');
-    await expect(page.locator('#rtx-form')).toContainText('نموذج تقني مؤقت');
-    for (const forbidden of ['fulfillment', 'requires_hold', 'amount', 'gateway', 'commission', 'provider']) {
-      await expect(page.locator('#rtx-form input[id*="' + forbidden + '"], #rtx-form select')).toHaveCount(0);
+    // The form offers the catalog pickers only: no free-text service/package, no agent selector, no backend-owned field.
+    await expect(page.locator('#rtx-catalog-service')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('#rtx-service-code, #rtx-package-id, #rtx-entry-mode-toggle, #rtx-temp-note')).toHaveCount(0);
+    await expect(page.locator('#rtx-form')).not.toContainText('نموذج تقني مؤقت');
+    for (const forbidden of ['fulfillment', 'requires_hold', 'amount', 'gateway', 'commission', 'provider', 'agent']) {
+      await expect(page.locator('#rtx-form input[id*="' + forbidden + '"], #rtx-form select[id*="' + forbidden + '"]')).toHaveCount(0);
     }
+    await expect(page.locator('#rtx-form select')).toHaveCount(2); // the catalog service + package pickers, nothing else
 
     // 1) Create a MANUAL transaction. A NEW transaction answers HTTP 202 (not 200).
     const heldBefore = await backendHeld(page);
@@ -209,9 +203,12 @@ test.describe('REAL TRANSACTIONS V1 — real backend', () => {
     await page.click('#btn-rtx-detail-close');
     await expect(page.locator('#rtx-detail')).toHaveCount(0);
 
-    // 6) Unknown service: the backend's 400 is shown.
-    await fillForm(page, { service: 'no-such-service-' + suffix, pkg: PACKAGE_CHEAP });
-    const unknown = await clickAndCapturePost(page, '#btn-rtx-submit');
+    // 6) Unknown service: the UI cannot even offer it, but a submission naming one is refused by the backend and its 400 is shown.
+    await page.evaluate((s) => {
+      rtx().submission = { key: generateIdempotencyKey(), payload: { serviceCode: 'no-such-service-' + s, packageId: 'e2e-pkg-cheap', targetIdentifier: null, formValues: null } };
+      render();
+    }, suffix);
+    const unknown = await clickAndCapturePost(page, '#btn-rtx-retry');
     expect(unknown.status()).toBe(400);
     await expect(page.locator('#rtx-form-error')).toHaveAttribute('data-error-code', 'VALIDATION_ERROR');
     await expect(page.locator('#rtx-form-error')).toContainText('service');

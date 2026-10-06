@@ -4816,7 +4816,7 @@ function generateIdempotencyKey() {
 /** The real-transaction screen's own state (lives in state.session, so every logout path clears it; never persisted). */
 function freshRealTransactionsState() {
   return {
-    form: { entryMode: "catalog", catalogServiceCode: "", catalogPackageCode: "", serviceCode: "", packageId: "", targetIdentifier: "", formValuesText: "", submitting: false, error: null },
+    form: { catalogServiceCode: "", catalogPackageCode: "", targetIdentifier: "", formValuesText: "", submitting: false, error: null },
     catalog: { loading: false, error: null, loaded: false, items: [] },
     // The submission currently being (re)tried: {key, payload}. A retry reuses the SAME key and payload.
     submission: null,
@@ -31430,8 +31430,7 @@ function adminLegacyBannerHTML(moduleId) {
                           records the canonical UUID for a (service, package code) pair the catalog knows.
      · Transactions     — picks from GET /api/v1/catalog (ACTIVE services and packages, readable by any signed-in
                           identity). The transaction API takes service code + package code; the database records the
-                          canonical UUID. A clearly-labelled "manual technical entry" mode remains for identifiers that are
-                          not in the catalog (legacy / seeded), and is never the default.
+                          canonical UUID. There is no free-text mode: only a real, ACTIVE catalog package can be ordered.
    The SPA never generates a package UUID.
    ════════════════════════════════════════════════════════════════════ */
 const BackendCatalogApi = {
@@ -31501,16 +31500,12 @@ function rtxCatalogPickersHTML(t, f, labelStyle) {
   if (c.loading && !c.loaded) return note + '<div id="rtx-catalog-loading" style="' + labelStyle + '">جارٍ تحميل الكتالوج من الخادم…</div>';
   if (c.error) return note + '<div id="rtx-catalog-error" style="' + labelStyle + 'color:' + C.danger + ';">' + escapeHtml(c.error) + '</div>';
   const sel = rtxEffectiveCatalogSelection(t);
-  if (!sel || !sel.pkg) return note + '<div id="rtx-catalog-empty" style="' + labelStyle + '">لا توجد خدمات وباقات نشطة في الكتالوج. فعّل خدمة وباقة، أو استخدم الإدخال التقني اليدوي.</div>';
+  if (!sel || !sel.pkg) return note + '<div id="rtx-catalog-empty" style="' + labelStyle + '">لا توجد خدمات وباقات نشطة في الكتالوج. فعّل خدمة وباقة من وحدتَي «الخدمات» و«الباقات (النظام الفعلي)».</div>';
   return note +
     '<div style="' + labelStyle + '">الخدمة</div><select id="rtx-catalog-service" style="' + selectStyle + '">' +
       c.items.filter((s) => s.packages.length > 0).map((s) => '<option value="' + escapeHtml(s.service_code) + '"' + (s.service_code === sel.service.service_code ? " selected" : "") + '>' + escapeHtml(s.service_code + " — " + s.name) + '</option>').join("") + '</select>' +
     '<div style="' + labelStyle + '">الباقة</div><select id="rtx-catalog-package" style="' + selectStyle + '">' +
       sel.service.packages.map((p) => '<option value="' + escapeHtml(p.package_code) + '"' + (p.package_code === sel.pkg.package_code ? " selected" : "") + '>' + escapeHtml(p.package_code + " — " + p.name) + '</option>').join("") + '</select>';
-}
-function rtxEntryModeToggleHTML(f) {
-  return '<button id="rtx-entry-mode-toggle" data-mode="' + (f.entryMode === "manual" ? "manual" : "catalog") + '" style="margin-top:10px;padding:6px 12px;border-radius:9px;background:transparent;border:1px solid ' + C.glassBorder + ';color:' + C.textDim + ';cursor:pointer;font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:11px;">' +
-    (f.entryMode === "manual" ? "العودة إلى اختيار الصنف من الكتالوج" : "إدخال تقني يدوي (لمعرّفات غير موجودة في الكتالوج)") + '</button>';
 }
 
 /* ════════════════════════════════════════════════════════════════════
@@ -31596,18 +31591,11 @@ function submitRealTransactionForm() {
   const t = rtx();
   const f = t.form;
   if (f.submitting) return;
-  let serviceCode;
-  let packageId;
-  if (f.entryMode === "manual") {
-    serviceCode = f.serviceCode.trim();
-    packageId = f.packageId.trim();
-    if (!serviceCode || !packageId) { f.error = "رمز الخدمة والباقة مطلوبان"; render(); return; }
-  } else {
-    const picked = rtxEffectiveCatalogSelection(t);
-    if (!picked || !picked.pkg) { f.error = "اختر خدمة وباقة من الكتالوج"; render(); return; }
-    serviceCode = picked.service.service_code;
-    packageId = picked.pkg.package_code;
-  }
+  // Package identity: the service and the package are ALWAYS picked from the server catalog, never typed — the backend only accepts a real, ACTIVE catalog package of that service.
+  const picked = rtxEffectiveCatalogSelection(t);
+  if (!picked || !picked.pkg) { f.error = "اختر خدمة وباقة من الكتالوج"; render(); return; }
+  const serviceCode = picked.service.service_code;
+  const packageId = picked.pkg.package_code;
   let formValues = null;
   if (f.formValuesText.trim()) {
     try { formValues = JSON.parse(f.formValuesText); } catch (e) { f.error = "form_values يجب أن يكون JSON صالحاً"; render(); return; }
@@ -31697,13 +31685,8 @@ function RealTransactionsPanelHTML(theme) {
     : "";
   const formHTML =
     '<div id="rtx-form" style="padding:14px;border-radius:14px;border:1px solid ' + C.glassBorder + ';background:rgba(255,255,255,0.02);">' +
-      '<div style="font-family:Cairo,sans-serif;font-weight:800;font-size:14px;color:' + C.text + ';">إنشاء معاملة (نموذج تقني مؤقت)</div>' +
-      (f.entryMode === "manual" ? (
-      '<div id="rtx-temp-note" style="margin-top:6px;font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:11px;color:' + C.textFaint + ';">يتم إدخال رمز الخدمة والباقه حاليًا بشكل مؤقت إلى حين اكتمال كتالوج الخدمات والباقات.</div>' +
-      field("rtx-service-code", "serviceCode", "رمز الخدمة (service code)", f.serviceCode, "e.g. svc-manual") +
-      field("rtx-package-id", "packageId", "الباقة (package_id)", f.packageId, "e.g. pkg-1") +
-        "") : rtxCatalogPickersHTML(t, f, labelStyle)) +
-      rtxEntryModeToggleHTML(f) +
+      '<div style="font-family:Cairo,sans-serif;font-weight:800;font-size:14px;color:' + C.text + ';">إنشاء معاملة</div>' +
+      rtxCatalogPickersHTML(t, f, labelStyle) +
       field("rtx-target-identifier", "targetIdentifier", "المعرّف المستهدف (اختياري)", f.targetIdentifier, "") +
       '<div style="' + labelStyle + '">form_values (JSON اختياري)</div><textarea id="rtx-form-values" class="rtx-input" data-field="formValuesText" rows="2" style="' + inputStyle + 'resize:vertical;">' + escapeHtml(f.formValuesText) + '</textarea>' +
       errorHTML +
@@ -31815,7 +31798,6 @@ function bindRealTransactionsEvents() {
     input.oninput = (e) => { rtx().form[input.getAttribute("data-field")] = e.target.value; };
   });
   if ($("btn-rtx-submit")) $("btn-rtx-submit").onclick = () => submitRealTransactionForm();
-  if ($("rtx-entry-mode-toggle")) $("rtx-entry-mode-toggle").onclick = () => { const f = rtx().form; f.entryMode = f.entryMode === "manual" ? "catalog" : "manual"; f.error = null; render(); };
   if ($("rtx-catalog-service")) $("rtx-catalog-service").onchange = (e) => { const f = rtx().form; f.catalogServiceCode = e.target.value; f.catalogPackageCode = ""; render(); };
   if ($("rtx-catalog-package")) $("rtx-catalog-package").onchange = (e) => { rtx().form.catalogPackageCode = e.target.value; };
   if ($("btn-rtx-retry")) $("btn-rtx-retry").onclick = () => retryRealTransactionSubmission();

@@ -72,7 +72,7 @@ test.describe('Package identity — pricing and transactions use the canonical c
     await page.click('#btn-admin-drawer-open');
     await page.click('.admin-nav-item[data-module-id="transactionsBackend"]');
     await expect(page.locator('#rtx-catalog-service')).toBeVisible({ timeout: 15_000 });
-    await expect(page.locator('#rtx-entry-mode-toggle')).toHaveAttribute('data-mode', 'catalog');
+    await expect(page.locator('#rtx-entry-mode-toggle')).toHaveCount(0); // there is no manual entry mode any more
     await expect(page.locator('#rtx-service-code')).toHaveCount(0);
     await expect(page.locator('#rtx-package-id')).toHaveCount(0);
     await expect(page.locator('#rtx-temp-note')).toHaveCount(0);
@@ -95,18 +95,14 @@ test.describe('Package identity — pricing and transactions use the canonical c
     const txRow = await queryOne('SELECT package_uuid, service_id, package_id FROM transactions WHERE id = $1', [transactionId]);
     if (txRow !== undefined) expect(txRow).toMatchObject({ package_uuid: prepared.packageId, service_id: serviceCode, package_id: packageCode });
 
-    // Manual technical entry is an explicit, non-default mode: it is labelled as such, and an unknown service is refused by the backend.
-    await page.click('#rtx-entry-mode-toggle');
-    await expect(page.locator('#rtx-entry-mode-toggle')).toHaveAttribute('data-mode', 'manual');
-    await expect(page.locator('#rtx-temp-note')).toBeVisible();
-    await expect(page.locator('#rtx-catalog-service')).toHaveCount(0);
-    await page.fill('#rtx-service-code', 'no-such-service-' + suffix);
-    await page.fill('#rtx-package-id', packageCode);
-    await page.click('#btn-rtx-submit');
+    // There is no way to type a service/package: a submission naming an unknown service is still refused by the backend.
+    await page.evaluate(({ s, p }) => {
+      rtx().submission = { key: generateIdempotencyKey(), payload: { serviceCode: 'no-such-service-' + s, packageId: p, targetIdentifier: null, formValues: null } };
+      render();
+    }, { s: suffix, p: packageCode });
+    await page.click('#btn-rtx-retry');
     await expect(page.locator('#rtx-form-error')).toBeVisible({ timeout: 15_000 });
     await expect(page.locator('#rtx-form-error')).toHaveAttribute('data-http-status', '400');
-    // Back to the catalog picker.
-    await page.click('#rtx-entry-mode-toggle');
     await expect(page.locator('#rtx-catalog-service')).toBeVisible();
 
     // The Service Pricing screen offers the package by its catalog identity (the picker carries the UUID that is sent).
