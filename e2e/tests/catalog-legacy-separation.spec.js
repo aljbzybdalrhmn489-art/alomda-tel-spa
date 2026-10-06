@@ -39,11 +39,12 @@ const LEGACY = {
   services: ['servicesBackend'],
   agents: ['agentsBackend'],
   operations: ['operationsBackend'],
-  commissions: ['pricingBackend', 'gatewaysBackend', 'marginFxBackend'],
+  commissions: ['pricingBackend', 'gatewaysBackend', 'marginFxBackend', 'commissionPoliciesBackend'],
+  customers: ['defaultAgentsBackend'],
   games: ['packagesBackend'],
   telecomCompanies: ['packagesBackend'],
 };
-const REAL_MODULES = ['packagesBackend', 'gatewaysBackend', 'pricingBackend', 'marginFxBackend', 'servicesBackend', 'agentsBackend', 'providers'];
+const REAL_MODULES = ['packagesBackend', 'gatewaysBackend', 'pricingBackend', 'marginFxBackend', 'servicesBackend', 'agentsBackend', 'providers', 'defaultAgentsBackend', 'commissionPoliciesBackend'];
 
 test.describe('Legacy local admin modules are separated from the real ones', () => {
   test('banner + label on every local module with a real replacement; no backend call from them; none on real modules', async ({ page }) => {
@@ -56,7 +57,7 @@ test.describe('Legacy local admin modules are separated from the real ones', () 
     for (const id of Object.keys(LEGACY)) {
       await expect(page.locator('.admin-nav-item[data-module-id="' + id + '"]')).toContainText('محلي');
     }
-    for (const id of ['packagesBackend', 'gatewaysBackend', 'pricingBackend', 'marginFxBackend']) {
+    for (const id of ['packagesBackend', 'gatewaysBackend', 'pricingBackend', 'marginFxBackend', 'defaultAgentsBackend', 'commissionPoliciesBackend']) {
       await expect(page.locator('.admin-nav-item[data-module-id="' + id + '"]')).toContainText('النظام الفعلي');
     }
 

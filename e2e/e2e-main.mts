@@ -148,6 +148,26 @@ async function seed(): Promise<void> {
       [tenantId, partyId],
     );
 
+    // DEFAULT AGENT ADMIN (E2E) — customers / POS to assign agents to. No HTTP route creates a CUSTOMER or POS party, so (like the
+    // backend's own tests) they are seeded through the repository. A NEW set is created on every start (account numbers carry the
+    // start time) so reruns never meet the assignments an earlier run left behind (history is never deleted); a spec finds its
+    // parties by the account-number prefix, newest first. They hold no user account and no role.
+    {
+      const startedAt = String(Date.now());
+      const parties = new PostgresPartyRepository({ database, unitOfWork, tenantId });
+      const zones = ZoneRegistry.build();
+      let n = 0;
+      for (const [tag, partyType] of [['C1', 'CUSTOMER'], ['C2', 'CUSTOMER'], ['C3', 'CUSTOMER'], ['P1', 'POS']] as const) {
+        n += 1;
+        const id = String(ids.generate());
+        const saved = await parties.save(toPartyRecord(Party.create({
+          id: id as never, partyType, parentId: null, accountNumber: 'E2E-DA-' + tag + '-' + startedAt, displayName: 'E2E Default Agent ' + tag + ' ' + startedAt,
+          phone: '+9677' + startedAt.slice(-8) + String(n), zoneCode: 'SOUTH', status: 'ACTIVE',
+        }, zones)));
+        if (!saved.ok) throw new Error('seed default-agent party ' + tag + ': ' + saved.error.message);
+      }
+    }
+
     // REAL OPERATIONS V1 — an Employee identity. No HTTP route creates an EMPLOYEE Party / UserAccount / credential,
     // so (like the backend's own tests) it is seeded through the repositories: a Party of type EMPLOYEE, an ACTIVE
     // UserAccount with an Argon2id PASSWORD credential, and an ONLINE, unarchived operational profile (re-asserted on
