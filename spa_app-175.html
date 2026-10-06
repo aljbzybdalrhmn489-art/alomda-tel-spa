@@ -1005,19 +1005,23 @@ const SYSTEM_TOOLS = [
    ════════════════════════════════════════════════════════════════════ */
 const ADMIN_NAV_ITEMS = [
   { id: "dashboard", label: "لوحة التحكم", icon: "LayoutGrid", description: "نظرة عامة على أداء النظام والإحصائيات الرئيسية" },
-  { id: "agents", label: "الوكلاء", icon: "Users", description: "إدارة حسابات الوكلاء وأرصدتهم وصلاحياتهم" },
+  { id: "agents", label: "الوكلاء — محلي (تجريبي)", icon: "Users", description: "إدارة حسابات الوكلاء وأرصدتهم وصلاحياتهم" },
   { id: "customers", label: "العملاء", icon: "UserCog", description: "إدارة سجلات العملاء وربطهم بالوكيل المسؤول عنهم" },
   { id: "providers", label: "المزوّدون", icon: "Building2", description: "إدارة مزوّدي الخدمات وربطهم بالمنتجات" },
   { id: "agentsBackend", label: "الوكلاء (النظام الفعلي)", icon: "Users", description: "إدارة الوكلاء عبر الخادم الفعلي (حساب دخول + رصيد مشتق من دفتر الأستاذ)" },
   { id: "servicesBackend", label: "الخدمات (النظام الفعلي)", icon: "Layers", description: "إدارة كتالوج الخدمات عبر الخادم الفعلي (Service Authority): الكود، استراتيجية التنفيذ، الحجز، والحالة" },
+  { id: "packagesBackend", label: "الباقات (النظام الفعلي)", icon: "Layers", description: "إدارة باقات الكتالوج عبر الخادم الفعلي: الخدمة، الكود، الاسم، الحالة، ترتيب العرض" },
+  { id: "gatewaysBackend", label: "البوابات (النظام الفعلي)", icon: "Building2", description: "إدارة البوابات عبر الخادم الفعلي: الكود، النوع، العملة الافتراضية، الحالة، البوابة الافتراضية" },
+  { id: "pricingBackend", label: "التسعير (النظام الفعلي)", icon: "Percent", description: "إدارة التسعير عبر الخادم الفعلي: مجموعات التسعير، تعيين الأطراف، وأسعار الخدمات (إصدارات)" },
+  { id: "marginFxBackend", label: "الهامش وأسعار الصرف (النظام الفعلي)", icon: "Receipt", description: "إدارة سياسات الهامش (إصدارات) وأسعار الصرف (سجل يُلحق به) عبر الخادم الفعلي" },
   { id: "transactionsBackend", label: "المعاملات (النظام الفعلي)", icon: "Receipt", description: "إنشاء ومتابعة معاملات حقيقية عبر الخادم: الحالة، الجدول الزمني، وحجز المبلغ" },
   { id: "operationsBackend", label: "العمليات — النظام الفعلي", icon: "Receipt", description: "طلبات الخدمة والموظفون والمجموعات عبر الخادم (التوزيع والحالة يحددهما الخادم)" },
-  { id: "telecomCompanies", label: "شركات الاتصالات", icon: "RadioTower", description: "إدارة شركات الاتصالات وباقاتها ومنتجاتها" },
+  { id: "telecomCompanies", label: "شركات الاتصالات — محلي (تجريبي)", icon: "RadioTower", description: "إدارة شركات الاتصالات وباقاتها ومنتجاتها" },
   { id: "wifi", label: "الواي فاي", icon: "Wifi", description: "إدارة منظومة الواي فاي: ملاك الشبكات، الشبكات، والمخزون" },
-  { id: "games", label: "الألعاب", icon: "Gamepad2", description: "إدارة كتالوج الألعاب والمنتجات الرقمية" },
-  { id: "services", label: "الخدمات", icon: "Layers", description: "إدارة الخدمات المتاحة للوكلاء والعملاء" },
-  { id: "operations", label: "العمليات", icon: "Receipt", description: "متابعة العمليات والمعاملات المالية" },
-  { id: "commissions", label: "العمولات والتسعير", icon: "Percent", description: "إدارة قواعد التسعير وعمولات الوكلاء" },
+  { id: "games", label: "الألعاب — محلي (تجريبي)", icon: "Gamepad2", description: "إدارة كتالوج الألعاب والمنتجات الرقمية" },
+  { id: "services", label: "الخدمات — محلي (تجريبي)", icon: "Layers", description: "إدارة الخدمات المتاحة للوكلاء والعملاء" },
+  { id: "operations", label: "العمليات — محلي (تجريبي)", icon: "Receipt", description: "متابعة العمليات والمعاملات المالية" },
+  { id: "commissions", label: "العمولات والتسعير — محلي (تجريبي)", icon: "Percent", description: "إدارة قواعد التسعير وعمولات الوكلاء" },
   { id: "reports", label: "التقارير", icon: "BarChart3", description: "تقارير الأداء والمبيعات والنشاط" },
   { id: "usersPermissions", label: "المستخدمون والصلاحيات", icon: "ShieldCheck", description: "إدارة حسابات الموظفين وصلاحيات الوصول" },
   { id: "systemSettings", label: "إعدادات النظام", icon: "Settings", description: "الإعدادات العامة وتخصيص النظام" },
@@ -4661,7 +4665,7 @@ async function loadProviderAccountsFromBackend(providerId) {
   render();
 }
 
-async function loadProviderMappingsFromBackend(packageId) {
+async function loadProviderMappingsFromBackend(packageId, serviceCode) {
   const pv = state.admin.modules.providers;
   pv.mappingsLoading = true; pv.mappingsLoadError = null; pv.mappingsNotice = null;
   render();
@@ -4672,9 +4676,10 @@ async function loadProviderMappingsFromBackend(packageId) {
     render();
     return;
   }
-  const mappings = result.data.map(mapBackendProviderMappingToDirectoryRecord);
+  // The backend filters by package CODE, which is unique per service only — keep just the picked service's mappings.
+  const mappings = result.data.map(mapBackendProviderMappingToDirectoryRecord).filter((x) => serviceCode === undefined || x.serviceId === serviceCode);
   for (let i = PROVIDER_MAPPING_DIRECTORY.length - 1; i >= 0; i -= 1) {
-    if (PROVIDER_MAPPING_DIRECTORY[i].packageId === packageId) PROVIDER_MAPPING_DIRECTORY.splice(i, 1);
+    if (PROVIDER_MAPPING_DIRECTORY[i].packageId === packageId && (serviceCode === undefined || PROVIDER_MAPPING_DIRECTORY[i].serviceId === serviceCode)) PROVIDER_MAPPING_DIRECTORY.splice(i, 1);
   }
   PROVIDER_MAPPING_DIRECTORY.push(...mappings);
   render();
@@ -4811,7 +4816,8 @@ function generateIdempotencyKey() {
 /** The real-transaction screen's own state (lives in state.session, so every logout path clears it; never persisted). */
 function freshRealTransactionsState() {
   return {
-    form: { serviceCode: "", packageId: "", targetIdentifier: "", formValuesText: "", submitting: false, error: null },
+    form: { entryMode: "catalog", catalogServiceCode: "", catalogPackageCode: "", serviceCode: "", packageId: "", targetIdentifier: "", formValuesText: "", submitting: false, error: null },
+    catalog: { loading: false, error: null, loaded: false, items: [] },
     // The submission currently being (re)tried: {key, payload}. A retry reuses the SAME key and payload.
     submission: null,
     lastResult: null, // {httpStatus, data, correlationId, idempotencyKey}
@@ -11610,6 +11616,7 @@ const ADMIN_ACTION_PERMISSION_DIRECTORY = [
   { id: "adminactionperm_providers_manageaccounts", key: "admin.action.providers.manageAccounts", label: "إدارة حسابات المزوّدين", description: "إضافة أو تعديل حساب مزوّد (شمال/جنوب)، أو تغيير حالته" },
   { id: "adminactionperm_agentsbackend_manage", key: "admin.action.agentsBackend.manage", label: "إدارة الوكلاء (النظام الفعلي)", description: "إضافة أو تعديل بيانات وكيل حقيقي على الخادم، أو تفعيله/إيقافه" },
   { id: "adminactionperm_servicesbackend_manage", key: "admin.action.servicesBackend.manage", label: "إدارة الخدمات (النظام الفعلي)", description: "إضافة أو تعديل خدمة على الخادم، أو تفعيلها/إيقافها" },
+  { id: "adminactionperm_catalogfoundation_manage", key: "admin.action.catalogFoundation.manage", label: "إدارة أساس الكتالوج (النظام الفعلي)", description: "إدارة الباقات والبوابات والتسعير والهامش وأسعار الصرف على الخادم، وكل تغيير يحسمه الخادم" },
   { id: "adminactionperm_wifi_generatecards", key: "admin.action.wifi.generateCards", label: "توليد بطاقات الواي فاي", description: "إصدار دفعات جديدة من بطاقات الواي فاي" },
   { id: "adminactionperm_commissions_editpricing", key: "admin.action.commissions.editPricing", label: "تعديل التسعير والعمولات", description: "تعديل سياسات العمولة، العملات، قواعد التسعير، البوابات، الفئات التجارية، وربط مزوّدي الاتصالات" },
   { id: "adminactionperm_commissions_settle", key: "admin.action.commissions.settle", label: "تسوية العمولات", description: "تنفيذ تسوية (صرف) عمولات الوكلاء المستحقة" },
@@ -19543,6 +19550,29 @@ const state = {
           submitting: false,
           error: null,
         },
+      },
+      // CATALOG FOUNDATION ADMIN (real backend) — talks ONLY to /api/v1/admin/packages (+ the Services list for choices).
+      packagesBackend: {
+        loading: false, loadError: null, notice: null, serviceFilter: "", servicesAvailable: true,
+        packageForm: { cfForm: true, open: false, mode: "add", editingId: null, serviceCode: "", code: "", name: "", displayOrder: "", submitting: false, error: null },
+      },
+      // CATALOG FOUNDATION ADMIN (real backend) — talks ONLY to /api/v1/admin/gateways.
+      gatewaysBackend: {
+        loading: false, loadError: null, notice: null,
+        gatewayForm: { cfForm: true, open: false, mode: "add", editingId: null, code: "", name: "", gatewayType: "NEUTRAL", defaultCurrencyCode: "YER", status: "", isDefault: "false", submitting: false, error: null },
+      },
+      // CATALOG FOUNDATION ADMIN (real backend) — Pricing: /api/v1/admin/pricing-groups, /pricing-assignments, /service-pricing.
+      pricingBackend: {
+        loading: false, loadError: null, notice: null, tab: "groups", assignmentPartyFilter: "", servicePricingGroupFilter: "",
+        groupForm: { cfForm: true, open: false, mode: "add", editingId: null, name: "", zoneId: "SOUTH", tierRank: "0", description: "", submitting: false, error: null },
+        assignmentForm: { cfForm: true, open: false, partyId: "", pricingGroupId: "", validFrom: "", reason: "", submitting: false, error: null },
+        servicePricingForm: { cfForm: true, open: false, pricingGroupId: "", serviceCode: "", packageUuid: "", currencyCode: "YER", retailPrice: "", validFrom: "", submitting: false, error: null },
+      },
+      // CATALOG FOUNDATION ADMIN (real backend) — Margin policies + FX rates: /api/v1/admin/margin-policies, /fx-rates.
+      marginFxBackend: {
+        loading: false, loadError: null, notice: null, tab: "margin", marginScopeFilter: "", marginServiceFilter: "", fxFromFilter: "", fxToFilter: "",
+        marginForm: { cfForm: true, open: false, scope: "GLOBAL", serviceCode: "", fixedMinimumAmount: "", percentageMinimum: "", validFrom: "", submitting: false, error: null },
+        fxForm: { cfForm: true, open: false, fromCurrency: "YER", toCurrency: "SAR", rate: "", effectiveFrom: "", source: "", submitting: false, error: null },
       },
     },
     // Prepared, not implemented (§2) — the data shape a future Agent
@@ -29817,7 +29847,8 @@ async function saveSecretRefForm(clearing) {
    ════════════════════════════════════════════════════════════════════ */
 function openProviderMappingsWorkspace(providerId) {
   if (!findProviderById(providerId)) return;
-  state.admin.modules.providers.mappingsWorkspace = { providerId, packageId: "" };
+  state.admin.modules.providers.mappingsWorkspace = { providerId, packageId: "", packageUuid: "", serviceCode: "" };
+  loadProviderMappingCatalog();
   PROVIDER_MAPPING_DIRECTORY.length = 0; // previous provider's own results are not this provider's own — never show stale rows under a new scope
   render();
 }
@@ -29844,9 +29875,9 @@ function AdminProviderMappingsWorkspaceHTML(theme, providerId) {
 
   let html = backHTML + headerHTML;
   html += '<div style="padding:14px 16px;border-radius:14px;background:' + C.glass + ';border:1px solid ' + C.glassBorder + ';margin-bottom:14px;">' +
-    '<label style="font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:10.5px;color:' + C.textFaint + ';display:block;margin-bottom:6px;">معرّف الباقة (Package ID)</label>' +
+    '<label style="font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:10.5px;color:' + C.textFaint + ';display:block;margin-bottom:6px;">الباقة (من الكتالوج)</label>' +
     '<div style="display:flex;gap:8px;">' +
-      '<input id="provider-mappings-package-id-input" value="' + (pv.mappingsWorkspace.packageId || "") + '" placeholder="مثال: pkg_012" style="' + selectStyle + '" />' +
+      providerMappingPackagePickerHTML(selectStyle) +
       '<button id="btn-admin-provider-mappings-load" style="flex-shrink:0;padding:0 16px;border-radius:9px;border:none;cursor:pointer;background:linear-gradient(135deg, ' + (theme.bright || theme.accent) + ', ' + theme.accent + ');color:#1A1408;font-family:Cairo,sans-serif;font-weight:700;font-size:12.5px;">تحميل</button>' +
     '</div>' +
   '</div>';
@@ -29915,7 +29946,7 @@ function openAddProviderMappingForm() {
   const accounts = findProviderAccounts(providerId);
   pv.mappingForm = {
     open: true, mode: "add", editingMappingId: null, providerId,
-    serviceId: "", packageId: pv.mappingsWorkspace.packageId || "",
+    serviceId: pv.mappingsWorkspace.serviceCode || "", packageId: pv.mappingsWorkspace.packageId || "",
     providerAccountId: accounts[0] ? accounts[0].id : "",
     gatewayId: "", providerProductCode: "", cost: "", costCurrency: "YER",
     priority: "0", isPrimaryChoice: "no", statusChoice: "disabled",
@@ -29946,9 +29977,13 @@ function AdminProviderMappingFormDialogHTML(theme) {
   for (const field of ADMIN_PROVIDER_MAPPING_FORM_FIELDS) {
     if (field.key === "providerAccountId") {
       fieldsHTML += AdminFormFieldHTML(Object.assign({}, field, { options: accountOptions.length > 0 ? accountOptions : [{ value: "", label: "— لا توجد حسابات لهذا المزوّد —" }] }), f.providerAccountId, null);
-    } else if (field.key === "packageId" && f.mode === "edit") {
-      // The mapping's own identity (§ header) — never editable once created.
-      continue;
+    } else if (field.key === "serviceId") {
+      // Derived from the catalog package picked in the workspace — never typed, never editable (Package identity, Phase 6).
+      fieldsHTML += cfReadonlyFieldHTML("pmf-service-readonly", "الخدمة (من الباقة المختارة)", f.serviceId);
+    } else if (field.key === "packageId") {
+      fieldsHTML += cfReadonlyFieldHTML("pmf-package-readonly", "الباقة (من الكتالوج)", f.packageId);
+      const catalogPackage = cfCatalogPackageFor(f.serviceId, f.packageId);
+      fieldsHTML += cfReadonlyFieldHTML("pmf-package-uuid-readonly", "معرّف الباقة المعتمد (UUID)", catalogPackage ? catalogPackage.id : "— غير موجودة في الكتالوج —");
     } else {
       fieldsHTML += AdminFormFieldHTML(field, f[field.key], null);
     }
@@ -30022,7 +30057,7 @@ async function saveProviderMappingForm() {
     }
   }
   state.admin.modules.providers.mappingForm.open = false;
-  await loadProviderMappingsFromBackend(packageId);
+  await loadProviderMappingsFromBackend(packageId, serviceId);
 }
 async function toggleProviderMappingStatus(mappingId) {
   if (!currentAccountHasAdminActionPermission("admin.action.providers.manageAccounts")) return;
@@ -30035,7 +30070,7 @@ async function toggleProviderMappingStatus(mappingId) {
     render();
     return;
   }
-  await loadProviderMappingsFromBackend(m.packageId);
+  await loadProviderMappingsFromBackend(m.packageId, m.serviceId);
 }
 
 /* ════════════════════════════════════════════════════════════════════
@@ -30388,6 +30423,1097 @@ async function toggleServiceBackendStatus(serviceId) {
 }
 
 /* ════════════════════════════════════════════════════════════════════
+   CATALOG FOUNDATION ADMIN (real backend) — Packages · Gateways · Pricing · Margin/FX.
+   One thin wrapper per REAL route (`package-admin-routes.ts`, `pricing-admin-routes.ts`); no endpoint and no
+   payload field is invented. Every list below is refilled ONLY from the backend after each mutation; these
+   modules never read or write the local mock catalog/pricing/gateway arrays (CATALOG_PACKAGES,
+   TELECOM_PACKAGE_DIRECTORY, PRICING_RULE_DIRECTORY, GATEWAY_DIRECTORY, …), which stay a separate legacy/demo path.
+   ════════════════════════════════════════════════════════════════════ */
+const BackendPackageApi = {
+  list(serviceCode) { return ApiClient.get("/api/v1/admin/packages" + (serviceCode ? "?service_code=" + encodeURIComponent(serviceCode) : "")); },
+  get(id) { return ApiClient.get("/api/v1/admin/packages/" + encodeURIComponent(id)); },
+  create(payload) { return ApiClient.post("/api/v1/admin/packages", payload); },
+  update(id, patch) { return ApiClient.patch("/api/v1/admin/packages/" + encodeURIComponent(id), patch); },
+  activate(id) { return ApiClient.post("/api/v1/admin/packages/" + encodeURIComponent(id) + "/activate", undefined); },
+  deactivate(id) { return ApiClient.post("/api/v1/admin/packages/" + encodeURIComponent(id) + "/deactivate", undefined); },
+};
+
+/* ════════════════════════════════════════════════════════════════════
+   CATALOG FOUNDATION ADMIN — shared UI helpers (used by the Packages, Gateways, Pricing and Margin/FX modules).
+   ════════════════════════════════════════════════════════════════════ */
+const CF_MODULE_IDS = ["packagesBackend", "gatewaysBackend", "pricingBackend", "marginFxBackend"];
+const CF_MANAGE_PERMISSION = "admin.action.catalogFoundation.manage";
+/** Each Catalog-Foundation module registers its own event binder here; attachEvents calls them all after every render. */
+const CF_BINDERS = [];
+function bindCatalogFoundationEvents() { CF_BINDERS.forEach((bind) => bind()); }
+/** The one open Catalog-Foundation form (a form object is flagged `cfForm: true`), or null. Feeds the global field handler. */
+function cfActiveForm() {
+  for (const id of CF_MODULE_IDS) {
+    const m = state.admin.modules[id];
+    if (!m) continue;
+    for (const key of Object.keys(m)) {
+      const v = m[key];
+      if (v && typeof v === "object" && v.cfForm === true && v.open) return v;
+    }
+  }
+  return null;
+}
+function cfCloseAllForms() {
+  for (const id of CF_MODULE_IDS) {
+    const m = state.admin.modules[id];
+    if (!m) continue;
+    for (const key of Object.keys(m)) {
+      const v = m[key];
+      if (v && typeof v === "object" && v.cfForm === true) v.open = false;
+    }
+  }
+}
+function cfLoadingHTML(id, text) {
+  return '<div id="' + id + '" style="padding:30px 0;text-align:center;font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:12.5px;color:' + C.textFaint + ';">' + escapeHtml(text) + '</div>';
+}
+function cfErrorHTML(id, message, retryId) {
+  return '<div id="' + id + '" style="padding:16px;border-radius:12px;background:' + C.dangerSoft + ';font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:12.5px;color:' + C.danger + ';text-align:center;">' + escapeHtml(message) +
+    '<div style="margin-top:10px;"><button id="' + retryId + '" style="padding:8px 16px;border-radius:9px;border:1px solid ' + C.danger + ';background:transparent;color:' + C.danger + ';cursor:pointer;font-family:Cairo,sans-serif;font-weight:700;font-size:12px;">إعادة المحاولة</button></div></div>';
+}
+function cfNoticeHTML(id, message) {
+  return message ? '<div id="' + id + '" style="margin-bottom:10px;padding:10px 14px;border-radius:11px;background:' + C.dangerSoft + ';font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:12px;color:' + C.danger + ';">' + escapeHtml(message) + '</div>' : "";
+}
+function cfEmptyHTML(id, text) {
+  return '<div id="' + id + '" style="padding:20px 0;text-align:center;font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:12px;color:' + C.textGhost + ';">' + escapeHtml(text) + '</div>';
+}
+function cfPrimaryButtonHTML(id, label, theme) {
+  return '<button id="' + id + '" style="width:100%;display:flex;align-items:center;justify-content:center;gap:7px;padding:11px 0;margin-bottom:10px;border-radius:11px;cursor:pointer;background:linear-gradient(135deg, ' + (theme.bright || theme.accent) + ', ' + theme.accent + ');border:none;">' +
+    Icons.Plus(13, "#1A1408") + '<span style="font-family:\'IBM Plex Sans Arabic\',sans-serif;font-weight:700;font-size:12.5px;color:#1A1408;">' + escapeHtml(label) + '</span></button>';
+}
+function cfSmallButtonHTML(cssClass, attrs, label) {
+  return '<button class="' + cssClass + '" ' + attrs + ' style="padding:5px 10px;border-radius:8px;background:rgba(255,255,255,0.05);border:1px solid ' + C.glassBorder + ';color:' + C.textDim + ';cursor:pointer;font-family:Cairo,sans-serif;font-weight:700;font-size:11px;">' + escapeHtml(label) + '</button>';
+}
+function cfTabsHTML(cssClass, tabs, activeId) {
+  return '<div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;">' + tabs.map((t) =>
+    '<button class="' + cssClass + '" data-tab-id="' + t.id + '" aria-pressed="' + (t.id === activeId ? "true" : "false") + '" style="padding:8px 14px;border-radius:10px;cursor:pointer;font-family:Cairo,sans-serif;font-weight:700;font-size:12px;border:1px solid ' + C.glassBorder + ';background:' + (t.id === activeId ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.03)") + ';color:' + (t.id === activeId ? C.text : C.textDim) + ';">' + escapeHtml(t.label) + '</button>').join("") + '</div>';
+}
+function cfSelectOptions(options) {
+  return options.map((o) => ({ value: escapeHtml(String(o.value)), label: escapeHtml(String(o.label)) }));
+}
+/** One form field via the app's own AdminFormFieldHTML (every dynamic piece is escaped here). */
+function cfField(id, key, label, type, value, required, options, inputMode) {
+  const field = { id, key, label: escapeHtml(label), type, required: !!required };
+  if (options) field.options = cfSelectOptions(options);
+  if (inputMode) field.inputMode = inputMode;
+  return AdminFormFieldHTML(field, escapeHtml(value === null || value === undefined ? "" : String(value)), null);
+}
+function cfReadonlyFieldHTML(id, label, value) {
+  return '<div style="margin-bottom:14px;"><div style="font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:12px;color:' + C.textDim + ';margin-bottom:7px;">' + escapeHtml(label) + '</div>' +
+    '<div id="' + id + '" style="direction:ltr;text-align:left;font-family:Cairo,sans-serif;font-size:13.5px;color:' + C.text + ';padding:10px 14px;border-radius:11px;border:1px solid ' + C.glassBorder + ';background:rgba(255,255,255,0.02);">' + escapeHtml(value) + '</div></div>';
+}
+function cfFormDialogHTML(overlayId, title, form, errorId, fieldsHTML, cancelId, saveId, theme) {
+  const errorHTML = form.error ? '<div id="' + errorId + '" style="margin-bottom:14px;padding:10px 14px;border-radius:11px;background:' + C.dangerSoft + ';font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:12px;color:' + C.danger + ';">' + escapeHtml(form.error) + '</div>' : "";
+  const footerHTML = '<div style="display:flex;gap:10px;margin-top:6px;">' +
+    '<button id="' + cancelId + '" style="flex:1;padding:12px 0;border-radius:12px;cursor:pointer;background:rgba(255,255,255,0.05);border:1px solid ' + C.glassBorder + ';color:' + C.textDim + ';font-family:Cairo,sans-serif;font-weight:700;font-size:13px;">إلغاء</button>' +
+    '<button id="' + saveId + '" ' + (form.submitting ? "disabled " : "") + 'style="flex:2;padding:12px 0;border-radius:12px;border:none;cursor:pointer;background:linear-gradient(135deg, ' + (theme.bright || theme.accent) + ', ' + theme.accent + ');color:#1A1408;font-family:Cairo,sans-serif;font-weight:800;font-size:13px;opacity:' + (form.submitting ? "0.6" : "1") + ';">' + (form.submitting ? "جارٍ الحفظ…" : "حفظ") + '</button></div>';
+  return AdminFormDialogShellHTML(overlayId, escapeHtml(title), errorHTML + fieldsHTML, footerHTML);
+}
+/**
+ * One real-backend call-result handler shared by the four modules: 401 → the app's own global reaction (sign out);
+ * anything else not ok → the backend's own message (403 stays "no permission"; conflict/validation keep their text)
+ * is written to `target.error` (a form) or `target.notice` (a list) and `null` is returned. The UI never reports
+ * success before this returns the successful result.
+ */
+function cfCheck(result, target) {
+  if (result.status === 401) { handleApiUnauthorized(); return null; }
+  if (!result.ok) {
+    if (target) {
+      if (target.cfForm === true) { target.submitting = false; target.error = describeApiError(result); } else { target.notice = describeApiError(result); }
+    }
+    render();
+    return null;
+  }
+  return result;
+}
+function cfFormatTimestamp(iso) {
+  return typeof iso === "string" ? escapeHtml(iso.slice(0, 16).replace("T", " ")) : "";
+}
+/** Accepts a non-negative integer typed as text; returns the number, or null when it is not one. */
+function cfParseNonNegativeInt(text) {
+  const t = String(text).trim();
+  if (!/^\d+$/.test(t)) return null;
+  const n = Number(t);
+  return Number.isSafeInteger(n) ? n : null;
+}
+/* ════════════════════════════════════════════════════════════════════
+   PACKAGES ADMIN (real backend) — `package-admin-routes.ts`. Package identity is the catalog Package: a stable
+   server-issued UUID (`id`) belonging to exactly one Service (`service_code`), with a code unique per service.
+   This screen never invents an id: it shows and uses what the backend returned. Lifecycle is the backend's own
+   (DRAFT → ACTIVE ↔ INACTIVE), chosen from the package's real current status, never a local flip.
+   ════════════════════════════════════════════════════════════════════ */
+const PACKAGE_BACKEND_DIRECTORY = [];
+function findPackageBackendById(id) {
+  return PACKAGE_BACKEND_DIRECTORY.find((p) => p.id === id) || null;
+}
+function mapBackendPackageToDirectoryRecord(dto) {
+  return {
+    id: dto.id,
+    serviceCode: dto.service_code,
+    code: dto.code,
+    name: dto.name,
+    status: dto.status, // DRAFT | ACTIVE | INACTIVE — the real backend vocabulary
+    displayOrder: dto.display_order,
+    createdAt: dto.created_at,
+    updatedAt: dto.updated_at,
+  };
+}
+/** Refills the real-Services mirror (used only to offer a Service choice); a 403 on services just means no choice list. */
+function cfFillServicesMirror(result) {
+  if (!result || !result.ok) return;
+  SERVICE_BACKEND_DIRECTORY.length = 0;
+  SERVICE_BACKEND_DIRECTORY.push(...result.data.map(mapBackendServiceToDirectoryRecord));
+}
+async function loadPackagesBackendFromBackend() {
+  const m = state.admin.modules.packagesBackend;
+  m.loading = true; m.loadError = null; m.notice = null;
+  render();
+  const [services, packages] = await Promise.all([BackendServiceApi.list(), BackendPackageApi.list(m.serviceFilter || null)]);
+  m.loading = false;
+  if (services.status === 401 || packages.status === 401) { handleApiUnauthorized(); return; }
+  if (!packages.ok) {
+    m.loadError = describeApiError(packages);
+    render();
+    return;
+  }
+  cfFillServicesMirror(services);
+  m.servicesAvailable = services.ok;
+  PACKAGE_BACKEND_DIRECTORY.length = 0;
+  PACKAGE_BACKEND_DIRECTORY.push(...packages.data.map(mapBackendPackageToDirectoryRecord));
+  render();
+}
+function AdminPackagesBackendModuleHTML(theme) {
+  const canManage = currentAccountHasAdminActionPermission(CF_MANAGE_PERMISSION);
+  const m = state.admin.modules.packagesBackend;
+  if (m.loading) return cfLoadingHTML("admin-packages-backend-loading", "جارٍ تحميل الباقات من الخادم…");
+  if (m.loadError) return cfErrorHTML("admin-packages-backend-error", m.loadError, "btn-admin-packages-backend-retry");
+
+  const filterOptions = [{ value: "", label: "كل الخدمات" }].concat(SERVICE_BACKEND_DIRECTORY.map((s) => ({ value: s.code, label: s.code + " — " + s.name })));
+  const filterHTML = '<div style="margin-bottom:12px;"><div style="font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:12px;color:' + C.textDim + ';margin-bottom:7px;">تصفية حسب الخدمة</div>' +
+    '<select id="pkgb-service-filter" style="width:100%;background:rgba(255,255,255,0.03);border:1px solid ' + C.glassBorder + ';border-radius:11px;padding:10px 14px;color:' + C.text + ';font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:13px;">' +
+    filterOptions.map((o) => '<option value="' + escapeHtml(o.value) + '"' + (o.value === m.serviceFilter ? " selected" : "") + '>' + escapeHtml(o.label) + '</option>').join("") + '</select></div>';
+
+  const addButtonHTML = canManage ? cfPrimaryButtonHTML("btn-admin-package-backend-add", "إضافة باقة", theme) : "";
+  let rowsHTML = PACKAGE_BACKEND_DIRECTORY.map((p) => AdminPackageBackendRowHTML(p, canManage)).join("");
+  if (PACKAGE_BACKEND_DIRECTORY.length === 0) rowsHTML = cfEmptyHTML("admin-packages-backend-empty", "لا توجد باقات بعد على الخادم الفعلي");
+  const formHTML = m.packageForm.open ? AdminPackageBackendFormDialogHTML(theme) : "";
+  return cfNoticeHTML("admin-packages-backend-notice", m.notice) + filterHTML + addButtonHTML + '<div id="admin-packages-backend-list">' + rowsHTML + '</div>' + formHTML;
+}
+function AdminPackageBackendRowHTML(p, canManage) {
+  const badge = serviceBackendLifecycleBadge(p.status); // same DRAFT/ACTIVE/INACTIVE vocabulary and transitions as Services
+  const attrs = 'data-package-id="' + escapeHtml(p.id) + '" data-package-code="' + escapeHtml(p.code) + '"';
+  const actionsHTML = canManage
+    ? '<div style="display:flex;gap:6px;">' + cfSmallButtonHTML("admin-package-backend-edit", attrs, "تعديل") +
+      (badge.nextAction ? cfSmallButtonHTML("admin-package-backend-toggle", attrs + ' data-next-action="' + badge.nextAction + '"', badge.nextAction === "deactivate" ? "تعطيل" : "تفعيل") : "") + '</div>'
+    : "";
+  return '<div class="admin-package-backend-row" data-package-id="' + escapeHtml(p.id) + '" data-package-code="' + escapeHtml(p.code) + '" data-service-code="' + escapeHtml(p.serviceCode) + '" style="display:flex;align-items:center;gap:8px;padding:12px 0;border-top:1px solid ' + C.glassBorder + ';">' +
+    '<div style="flex:1;min-width:0;">' +
+      '<div style="font-family:Cairo,sans-serif;font-weight:700;font-size:13px;color:' + C.text + ';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(p.name) + '</div>' +
+      '<div style="font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:10.5px;color:' + C.textFaint + ';word-break:break-word;">' +
+        '<span class="package-backend-service" style="direction:ltr;unicode-bidi:embed;">' + escapeHtml(p.serviceCode) + '</span> · ' +
+        '<span class="package-backend-code" style="direction:ltr;unicode-bidi:embed;">' + escapeHtml(p.code) + '</span> · ' +
+        '<span class="package-backend-order" data-display-order="' + escapeHtml(String(p.displayOrder)) + '">ترتيب العرض: ' + escapeHtml(String(p.displayOrder)) + '</span>' +
+      '</div>' +
+      '<div class="package-backend-uuid" style="direction:ltr;text-align:left;font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:9.5px;color:' + C.textGhost + ';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">UUID ' + escapeHtml(p.id) + '</div>' +
+      '<div style="font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:10px;color:' + C.textGhost + ';">أُنشئت ' + cfFormatTimestamp(p.createdAt) + ' · حُدّثت ' + cfFormatTimestamp(p.updatedAt) + '</div>' +
+    '</div>' +
+    '<span class="package-backend-status" data-status="' + escapeHtml(String(p.status)) + '">' + AdminTableBadgeHTML(badge.label, badge.color) + '</span>' +
+    actionsHTML +
+  '</div>';
+}
+function openAddPackageBackendForm() {
+  const m = state.admin.modules.packagesBackend;
+  const defaultService = m.serviceFilter || (SERVICE_BACKEND_DIRECTORY.length > 0 ? SERVICE_BACKEND_DIRECTORY[0].code : "");
+  m.packageForm = { cfForm: true, open: true, mode: "add", editingId: null, serviceCode: defaultService, code: "", name: "", displayOrder: "", submitting: false, error: null };
+  render();
+}
+function openEditPackageBackendForm(packageId) {
+  const p = findPackageBackendById(packageId);
+  if (!p) return;
+  state.admin.modules.packagesBackend.packageForm = { cfForm: true, open: true, mode: "edit", editingId: p.id, serviceCode: p.serviceCode, code: p.code, name: p.name, displayOrder: String(p.displayOrder), submitting: false, error: null };
+  render();
+}
+function AdminPackageBackendFormDialogHTML(theme) {
+  const f = state.admin.modules.packagesBackend.packageForm;
+  let fieldsHTML = "";
+  if (f.mode === "add") {
+    if (SERVICE_BACKEND_DIRECTORY.length === 0) {
+      fieldsHTML += cfNoticeHTML("package-backend-no-services", "لا توجد خدمات متاحة للاختيار. أنشئ خدمة أولاً من وحدة «الخدمات (النظام الفعلي)».");
+    }
+    fieldsHTML += cfField("pkgb-service", "serviceCode", "الخدمة", "select", f.serviceCode, true,
+      SERVICE_BACKEND_DIRECTORY.map((s) => ({ value: s.code, label: s.code + " — " + s.name + " (" + s.status + ")" })));
+    fieldsHTML += cfField("pkgb-code", "code", "كود الباقة (فريد داخل الخدمة، ولا يمكن تغييره لاحقاً)", "text", f.code, true);
+  } else {
+    // `service_code` and `code` are identity — immutable on the backend (PATCH accepts only name / display_order).
+    fieldsHTML += cfReadonlyFieldHTML("pkgb-service-readonly", "الخدمة", f.serviceCode);
+    fieldsHTML += cfReadonlyFieldHTML("pkgb-code-readonly", "كود الباقة", f.code);
+    fieldsHTML += cfReadonlyFieldHTML("pkgb-uuid-readonly", "معرّف الباقة (UUID)", f.editingId);
+  }
+  fieldsHTML += cfField("pkgb-name", "name", "اسم الباقة", "text", f.name, true);
+  fieldsHTML += cfField("pkgb-display-order", "displayOrder", "ترتيب العرض (عدد صحيح ≥ 0، اختياري)", "text", f.displayOrder, false, null, "numeric");
+  return cfFormDialogHTML("admin-package-backend-form-overlay", f.mode === "add" ? "إضافة باقة" : "تعديل الباقة", f, "package-backend-form-error", fieldsHTML, "btn-admin-package-backend-form-cancel", "btn-admin-package-backend-form-save", theme);
+}
+async function savePackageBackendForm() {
+  const m = state.admin.modules.packagesBackend;
+  const f = m.packageForm;
+  if (f.submitting) return;
+  if (!currentAccountHasAdminActionPermission(CF_MANAGE_PERMISSION)) { f.error = "لا تملك صلاحية تنفيذ هذا الإجراء"; render(); return; }
+  const name = f.name.trim();
+  const code = f.code.trim();
+  const orderText = String(f.displayOrder).trim();
+  let displayOrder;
+  if (orderText !== "") {
+    displayOrder = cfParseNonNegativeInt(orderText);
+    if (displayOrder === null) { f.error = "ترتيب العرض يجب أن يكون عدداً صحيحاً غير سالب"; render(); return; }
+  }
+  if (!name || (f.mode === "add" && (!code || !f.serviceCode))) { f.error = "جميع الحقول المطلوبة يجب تعبئتها"; render(); return; }
+
+  f.submitting = true; f.error = null;
+  render();
+
+  let result;
+  if (f.mode === "add") {
+    const payload = { service_code: f.serviceCode, code, name };
+    if (displayOrder !== undefined) payload.display_order = displayOrder;
+    result = await BackendPackageApi.create(payload);
+  } else {
+    const patch = { name };
+    if (displayOrder !== undefined) patch.display_order = displayOrder;
+    result = await BackendPackageApi.update(f.editingId, patch);
+  }
+  if (!cfCheck(result, f)) return;
+  f.open = false;
+  await loadPackagesBackendFromBackend();
+}
+async function togglePackageBackendStatus(packageId) {
+  if (!currentAccountHasAdminActionPermission(CF_MANAGE_PERMISSION)) return;
+  const p = findPackageBackendById(packageId);
+  if (!p) return;
+  const badge = serviceBackendLifecycleBadge(p.status);
+  if (!badge.nextAction) return;
+  const m = state.admin.modules.packagesBackend;
+  const result = badge.nextAction === "deactivate" ? await BackendPackageApi.deactivate(packageId) : await BackendPackageApi.activate(packageId);
+  if (!cfCheck(result, m)) return;
+  await loadPackagesBackendFromBackend();
+}
+function bindPackagesBackendEvents() {
+  const $ = (id) => document.getElementById(id);
+  const m = state.admin.modules.packagesBackend;
+  if ($("btn-admin-package-backend-add")) $("btn-admin-package-backend-add").onclick = () => openAddPackageBackendForm();
+  document.querySelectorAll(".admin-package-backend-edit").forEach((btn) => { btn.onclick = () => openEditPackageBackendForm(btn.getAttribute("data-package-id")); });
+  document.querySelectorAll(".admin-package-backend-toggle").forEach((btn) => { btn.onclick = () => togglePackageBackendStatus(btn.getAttribute("data-package-id")); });
+  if ($("btn-admin-package-backend-form-cancel")) $("btn-admin-package-backend-form-cancel").onclick = () => { m.packageForm.open = false; render(); };
+  if ($("btn-admin-package-backend-form-save")) $("btn-admin-package-backend-form-save").onclick = () => savePackageBackendForm();
+  if ($("btn-admin-packages-backend-retry")) $("btn-admin-packages-backend-retry").onclick = () => loadPackagesBackendFromBackend();
+  if ($("pkgb-service-filter")) $("pkgb-service-filter").onchange = (e) => { m.serviceFilter = e.target.value; loadPackagesBackendFromBackend(); };
+}
+
+CF_BINDERS.push(bindPackagesBackendEvents);
+
+/* ════════════════════════════════════════════════════════════════════
+   GATEWAYS ADMIN (real backend) — `pricing-admin-routes.ts` (/api/v1/admin/gateways: POST · GET · GET :id · PATCH :id).
+   Exactly those routes: there is NO activate/deactivate and NO delete on the backend, so none is offered here.
+   `status` is deliberately uninterpreted by the backend today (free text, no frozen vocabulary), so it is a plain
+   text field and is never mapped to a vocabulary of this SPA's own. `code` is immutable (PATCH never accepts it).
+   ════════════════════════════════════════════════════════════════════ */
+const BackendGatewayApi = {
+  list() { return ApiClient.get("/api/v1/admin/gateways"); },
+  get(id) { return ApiClient.get("/api/v1/admin/gateways/" + encodeURIComponent(id)); },
+  create(payload) { return ApiClient.post("/api/v1/admin/gateways", payload); },
+  update(id, patch) { return ApiClient.patch("/api/v1/admin/gateways/" + encodeURIComponent(id), patch); },
+};
+/** The backend's own vocabularies (rejected server-side otherwise): gateway types and currency codes. */
+const CF_GATEWAY_TYPE_OPTIONS = [
+  { value: "NEUTRAL", label: "محايدة (NEUTRAL)" },
+  { value: "NORTH", label: "شمال (NORTH)" },
+  { value: "SOUTH", label: "جنوب (SOUTH)" },
+];
+const CF_CURRENCY_OPTIONS = [
+  { value: "YER", label: "YER" },
+  { value: "YEO", label: "YEO" },
+  { value: "SAR", label: "SAR" },
+  { value: "USD", label: "USD" },
+];
+const GATEWAY_BACKEND_DIRECTORY = [];
+function findGatewayBackendById(id) {
+  return GATEWAY_BACKEND_DIRECTORY.find((g) => g.id === id) || null;
+}
+function mapBackendGatewayToDirectoryRecord(dto) {
+  return { id: dto.id, code: dto.code, name: dto.name, gatewayType: dto.gateway_type, defaultCurrencyCode: dto.default_currency_code, status: dto.status, isDefault: dto.is_default === true };
+}
+async function loadGatewaysBackendFromBackend() {
+  const m = state.admin.modules.gatewaysBackend;
+  m.loading = true; m.loadError = null; m.notice = null;
+  render();
+  const result = await BackendGatewayApi.list();
+  m.loading = false;
+  if (result.status === 401) { handleApiUnauthorized(); return; }
+  if (!result.ok) {
+    m.loadError = describeApiError(result);
+    render();
+    return;
+  }
+  GATEWAY_BACKEND_DIRECTORY.length = 0;
+  GATEWAY_BACKEND_DIRECTORY.push(...result.data.map(mapBackendGatewayToDirectoryRecord));
+  render();
+}
+function AdminGatewaysBackendModuleHTML(theme) {
+  const canManage = currentAccountHasAdminActionPermission(CF_MANAGE_PERMISSION);
+  const m = state.admin.modules.gatewaysBackend;
+  if (m.loading) return cfLoadingHTML("admin-gateways-backend-loading", "جارٍ تحميل البوابات من الخادم…");
+  if (m.loadError) return cfErrorHTML("admin-gateways-backend-error", m.loadError, "btn-admin-gateways-backend-retry");
+  const addButtonHTML = canManage ? cfPrimaryButtonHTML("btn-admin-gateway-backend-add", "إضافة بوابة", theme) : "";
+  let rowsHTML = GATEWAY_BACKEND_DIRECTORY.map((g) => AdminGatewayBackendRowHTML(g, canManage)).join("");
+  if (GATEWAY_BACKEND_DIRECTORY.length === 0) rowsHTML = cfEmptyHTML("admin-gateways-backend-empty", "لا توجد بوابات بعد على الخادم الفعلي");
+  const formHTML = m.gatewayForm.open ? AdminGatewayBackendFormDialogHTML(theme) : "";
+  return cfNoticeHTML("admin-gateways-backend-notice", m.notice) + addButtonHTML + '<div id="admin-gateways-backend-list">' + rowsHTML + '</div>' + formHTML;
+}
+function AdminGatewayBackendRowHTML(g, canManage) {
+  const actionsHTML = canManage ? cfSmallButtonHTML("admin-gateway-backend-edit", 'data-gateway-id="' + escapeHtml(g.id) + '" data-gateway-code="' + escapeHtml(g.code) + '"', "تعديل") : "";
+  const defaultBadge = g.isDefault ? ' <span class="gateway-backend-default" data-is-default="true">' + AdminTableBadgeHTML("افتراضية", "#5FBF8F") + '</span>' : '<span class="gateway-backend-default" data-is-default="false"></span>';
+  return '<div class="admin-gateway-backend-row" data-gateway-id="' + escapeHtml(g.id) + '" data-gateway-code="' + escapeHtml(g.code) + '" style="display:flex;align-items:center;gap:8px;padding:12px 0;border-top:1px solid ' + C.glassBorder + ';">' +
+    '<div style="flex:1;min-width:0;">' +
+      '<div style="font-family:Cairo,sans-serif;font-weight:700;font-size:13px;color:' + C.text + ';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(g.name) + defaultBadge + '</div>' +
+      '<div style="font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:10.5px;color:' + C.textFaint + ';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' +
+        '<span class="gateway-backend-code" style="direction:ltr;unicode-bidi:embed;">' + escapeHtml(g.code) + '</span> · ' +
+        '<span class="gateway-backend-type">' + escapeHtml(g.gatewayType) + '</span> · ' +
+        '<span class="gateway-backend-currency">' + escapeHtml(g.defaultCurrencyCode) + '</span> · ' +
+        '<span class="gateway-backend-status" data-status="' + escapeHtml(g.status) + '">الحالة: ' + escapeHtml(g.status) + '</span>' +
+      '</div>' +
+    '</div>' + actionsHTML +
+  '</div>';
+}
+function openAddGatewayBackendForm() {
+  state.admin.modules.gatewaysBackend.gatewayForm = { cfForm: true, open: true, mode: "add", editingId: null, code: "", name: "", gatewayType: "NEUTRAL", defaultCurrencyCode: "YER", status: "", isDefault: "false", submitting: false, error: null };
+  render();
+}
+function openEditGatewayBackendForm(gatewayId) {
+  const g = findGatewayBackendById(gatewayId);
+  if (!g) return;
+  state.admin.modules.gatewaysBackend.gatewayForm = { cfForm: true, open: true, mode: "edit", editingId: g.id, code: g.code, name: g.name, gatewayType: g.gatewayType, defaultCurrencyCode: g.defaultCurrencyCode, status: g.status, isDefault: g.isDefault ? "true" : "false", submitting: false, error: null };
+  render();
+}
+function AdminGatewayBackendFormDialogHTML(theme) {
+  const f = state.admin.modules.gatewaysBackend.gatewayForm;
+  let fieldsHTML = "";
+  if (f.mode === "add") fieldsHTML += cfField("gwb-code", "code", "كود البوابة (لا يمكن تغييره لاحقاً)", "text", f.code, true);
+  else fieldsHTML += cfReadonlyFieldHTML("gwb-code-readonly", "كود البوابة", f.code);
+  fieldsHTML += cfField("gwb-name", "name", "اسم البوابة", "text", f.name, true);
+  fieldsHTML += cfField("gwb-type", "gatewayType", "نوع البوابة", "select", f.gatewayType, true, CF_GATEWAY_TYPE_OPTIONS);
+  fieldsHTML += cfField("gwb-currency", "defaultCurrencyCode", "العملة الافتراضية", "select", f.defaultCurrencyCode, true, CF_CURRENCY_OPTIONS);
+  fieldsHTML += cfField("gwb-status", "status", "الحالة (نص حر — لا يفسّره الخادم حالياً)", "text", f.status, true);
+  fieldsHTML += cfField("gwb-is-default", "isDefault", "بوابة افتراضية (واحدة فقط لكل نظام)", "select", f.isDefault, true, [{ value: "false", label: "لا" }, { value: "true", label: "نعم" }]);
+  return cfFormDialogHTML("admin-gateway-backend-form-overlay", f.mode === "add" ? "إضافة بوابة" : "تعديل البوابة", f, "gateway-backend-form-error", fieldsHTML, "btn-admin-gateway-backend-form-cancel", "btn-admin-gateway-backend-form-save", theme);
+}
+async function saveGatewayBackendForm() {
+  const f = state.admin.modules.gatewaysBackend.gatewayForm;
+  if (f.submitting) return;
+  if (!currentAccountHasAdminActionPermission(CF_MANAGE_PERMISSION)) { f.error = "لا تملك صلاحية تنفيذ هذا الإجراء"; render(); return; }
+  const code = f.code.trim();
+  const name = f.name.trim();
+  const status = f.status.trim();
+  if (!name || !status || (f.mode === "add" && !code)) { f.error = "جميع الحقول المطلوبة يجب تعبئتها"; render(); return; }
+  f.submitting = true; f.error = null;
+  render();
+  const isDefault = f.isDefault === "true";
+  let result;
+  if (f.mode === "add") {
+    result = await BackendGatewayApi.create({ code, name, gateway_type: f.gatewayType, default_currency_code: f.defaultCurrencyCode, status, is_default: isDefault });
+  } else {
+    result = await BackendGatewayApi.update(f.editingId, { name, gateway_type: f.gatewayType, default_currency_code: f.defaultCurrencyCode, status, is_default: isDefault });
+  }
+  if (!cfCheck(result, f)) return;
+  f.open = false;
+  await loadGatewaysBackendFromBackend();
+}
+function bindGatewaysBackendEvents() {
+  const $ = (id) => document.getElementById(id);
+  const m = state.admin.modules.gatewaysBackend;
+  if ($("btn-admin-gateway-backend-add")) $("btn-admin-gateway-backend-add").onclick = () => openAddGatewayBackendForm();
+  document.querySelectorAll(".admin-gateway-backend-edit").forEach((btn) => { btn.onclick = () => openEditGatewayBackendForm(btn.getAttribute("data-gateway-id")); });
+  if ($("btn-admin-gateway-backend-form-cancel")) $("btn-admin-gateway-backend-form-cancel").onclick = () => { m.gatewayForm.open = false; render(); };
+  if ($("btn-admin-gateway-backend-form-save")) $("btn-admin-gateway-backend-form-save").onclick = () => saveGatewayBackendForm();
+  if ($("btn-admin-gateways-backend-retry")) $("btn-admin-gateways-backend-retry").onclick = () => loadGatewaysBackendFromBackend();
+}
+CF_BINDERS.push(bindGatewaysBackendEvents);
+
+/* ════════════════════════════════════════════════════════════════════
+   PRICING ADMIN (real backend) — `pricing-admin-routes.ts`:
+     /api/v1/admin/pricing-groups        POST · GET · GET :id · PATCH :id (name, description) · POST :id/activate · POST :id/deactivate
+     /api/v1/admin/pricing-assignments   POST · GET (?party_id=)           — history is append-only, no update/delete
+     /api/v1/admin/service-pricing       POST (creates a new VERSION) · GET (?pricing_group_id=&package_id=&service_code=)
+   Conceptual chain: PricingGroup → Party Pricing Assignment → Service Pricing. A PricingGroup is NOT an AgentGroup
+   (PricingGroup = pricing/cost, AgentGroup = commission/reward) and nothing here links the two.
+   Package identity: a Service Pricing row is created from a Package PICKED from the real Package API; the SPA sends
+   that package's backend-issued UUID (`package_uuid`) together with its service code and package code and never
+   invents or retypes an identity (the backend re-validates all three against the catalog).
+   ════════════════════════════════════════════════════════════════════ */
+const BackendPricingGroupApi = {
+  list() { return ApiClient.get("/api/v1/admin/pricing-groups"); },
+  get(id) { return ApiClient.get("/api/v1/admin/pricing-groups/" + encodeURIComponent(id)); },
+  create(payload) { return ApiClient.post("/api/v1/admin/pricing-groups", payload); },
+  update(id, patch) { return ApiClient.patch("/api/v1/admin/pricing-groups/" + encodeURIComponent(id), patch); },
+  activate(id) { return ApiClient.post("/api/v1/admin/pricing-groups/" + encodeURIComponent(id) + "/activate", undefined); },
+  deactivate(id) { return ApiClient.post("/api/v1/admin/pricing-groups/" + encodeURIComponent(id) + "/deactivate", undefined); },
+};
+const BackendPricingAssignmentApi = {
+  list(partyId) { return ApiClient.get("/api/v1/admin/pricing-assignments" + (partyId ? "?party_id=" + encodeURIComponent(partyId) : "")); },
+  create(payload) { return ApiClient.post("/api/v1/admin/pricing-assignments", payload); },
+};
+const BackendServicePricingApi = {
+  list(filter) {
+    const params = [];
+    if (filter && filter.pricingGroupId) params.push("pricing_group_id=" + encodeURIComponent(filter.pricingGroupId));
+    if (filter && filter.packageId) params.push("package_id=" + encodeURIComponent(filter.packageId));
+    if (filter && filter.serviceCode) params.push("service_code=" + encodeURIComponent(filter.serviceCode));
+    return ApiClient.get("/api/v1/admin/service-pricing" + (params.length ? "?" + params.join("&") : ""));
+  },
+  create(payload) { return ApiClient.post("/api/v1/admin/service-pricing", payload); },
+};
+const CF_ZONE_OPTIONS = [
+  { value: "NORTH", label: "الشمال (NORTH)" },
+  { value: "SOUTH", label: "الجنوب (SOUTH)" },
+  { value: "SA", label: "السعودية (SA)" },
+];
+const PRICING_GROUP_BACKEND_DIRECTORY = [];
+const PRICING_ASSIGNMENT_BACKEND_DIRECTORY = [];
+const SERVICE_PRICING_BACKEND_DIRECTORY = [];
+const PRICING_PARTY_CHOICES = []; // real Agents (id, label) offered as assignment targets — the only parties the admin API can list today
+function findPricingGroupBackendById(id) {
+  return PRICING_GROUP_BACKEND_DIRECTORY.find((g) => g.id === id) || null;
+}
+function mapBackendPricingGroupToDirectoryRecord(dto) {
+  return { id: dto.id, name: dto.name, zoneId: dto.zone_id, tierRank: dto.tier_rank, description: dto.description, isActive: dto.is_active === true };
+}
+function mapBackendPricingAssignmentToDirectoryRecord(dto) {
+  return { id: dto.id, partyId: dto.party_id, pricingGroupId: dto.pricing_group_id, validFrom: dto.valid_from, validTo: dto.valid_to, assignedBy: dto.assigned_by, reason: dto.reason };
+}
+function mapBackendServicePricingToDirectoryRecord(dto) {
+  return { pricingGroupId: dto.pricing_group_id, serviceCode: dto.service_code, packageCode: dto.package_id, currencyCode: dto.currency_code, retailPrice: dto.retail_price, validFrom: dto.valid_from, validTo: dto.valid_to, version: dto.version };
+}
+function cfPricingGroupName(id) {
+  const g = findPricingGroupBackendById(id);
+  return g ? g.name : id;
+}
+function cfPricingPartyLabel(partyId) {
+  const p = PRICING_PARTY_CHOICES.find((x) => x.id === partyId);
+  return p ? p.label : partyId;
+}
+/** The catalog package a Service Pricing row refers to (same service + code), or null when the catalog does not know it. */
+function cfCatalogPackageFor(serviceCode, packageCode) {
+  return PACKAGE_BACKEND_DIRECTORY.find((p) => p.serviceCode === serviceCode && p.code === packageCode) || null;
+}
+async function loadPricingBackendFromBackend() {
+  const m = state.admin.modules.pricingBackend;
+  m.loading = true; m.loadError = null; m.notice = null;
+  render();
+  const [groups, assignments, servicePricing, services, packages, agents] = await Promise.all([
+    BackendPricingGroupApi.list(),
+    BackendPricingAssignmentApi.list(m.assignmentPartyFilter || null),
+    BackendServicePricingApi.list({ pricingGroupId: m.servicePricingGroupFilter || null }),
+    BackendServiceApi.list(),
+    BackendPackageApi.list(null),
+    BackendAgentApi.list(),
+  ]);
+  m.loading = false;
+  if ([groups, assignments, servicePricing, services, packages, agents].some((r) => r.status === 401)) { handleApiUnauthorized(); return; }
+  const failed = [groups, assignments, servicePricing].find((r) => !r.ok);
+  if (failed) {
+    m.loadError = describeApiError(failed);
+    render();
+    return;
+  }
+  PRICING_GROUP_BACKEND_DIRECTORY.length = 0;
+  PRICING_GROUP_BACKEND_DIRECTORY.push(...groups.data.map(mapBackendPricingGroupToDirectoryRecord));
+  PRICING_ASSIGNMENT_BACKEND_DIRECTORY.length = 0;
+  PRICING_ASSIGNMENT_BACKEND_DIRECTORY.push(...assignments.data.map(mapBackendPricingAssignmentToDirectoryRecord));
+  SERVICE_PRICING_BACKEND_DIRECTORY.length = 0;
+  SERVICE_PRICING_BACKEND_DIRECTORY.push(...servicePricing.data.map(mapBackendServicePricingToDirectoryRecord));
+  cfFillServicesMirror(services);
+  PACKAGE_BACKEND_DIRECTORY.length = 0;
+  if (packages.ok) PACKAGE_BACKEND_DIRECTORY.push(...packages.data.map(mapBackendPackageToDirectoryRecord));
+  PRICING_PARTY_CHOICES.length = 0;
+  if (agents.ok) PRICING_PARTY_CHOICES.push(...agents.data.map((a) => ({ id: a.id, label: a.display_name + " (" + a.account_number + ")" })));
+  const missing = [];
+  if (!services.ok) missing.push("الخدمات");
+  if (!packages.ok) missing.push("الباقات");
+  if (!agents.ok) missing.push("الوكلاء");
+  if (missing.length > 0) m.notice = "تعذّر تحميل قوائم الاختيار: " + missing.join("، ") + " (صلاحية غير كافية على الخادم).";
+  render();
+}
+const PRICING_BACKEND_TABS = [
+  { id: "groups", label: "مجموعات التسعير" },
+  { id: "assignments", label: "تعيينات التسعير" },
+  { id: "servicePricing", label: "أسعار الخدمات" },
+];
+function AdminPricingBackendModuleHTML(theme) {
+  const canManage = currentAccountHasAdminActionPermission(CF_MANAGE_PERMISSION);
+  const m = state.admin.modules.pricingBackend;
+  if (m.loading) return cfLoadingHTML("admin-pricing-backend-loading", "جارٍ تحميل التسعير من الخادم…");
+  if (m.loadError) return cfErrorHTML("admin-pricing-backend-error", m.loadError, "btn-admin-pricing-backend-retry");
+  const tabsHTML = cfTabsHTML("pricing-backend-tab", PRICING_BACKEND_TABS, m.tab);
+  let bodyHTML;
+  if (m.tab === "assignments") bodyHTML = AdminPricingAssignmentsTabHTML(theme, canManage, m);
+  else if (m.tab === "servicePricing") bodyHTML = AdminServicePricingTabHTML(theme, canManage, m);
+  else bodyHTML = AdminPricingGroupsTabHTML(theme, canManage, m);
+  return cfNoticeHTML("admin-pricing-backend-notice", m.notice) + tabsHTML + bodyHTML;
+}
+/* ── Pricing groups ─────────────────────────────────────────────── */
+function AdminPricingGroupsTabHTML(theme, canManage, m) {
+  const addHTML = canManage ? cfPrimaryButtonHTML("btn-admin-pricing-group-add", "إضافة مجموعة تسعير", theme) : "";
+  let rowsHTML = PRICING_GROUP_BACKEND_DIRECTORY.map((g) => {
+    const attrs = 'data-group-id="' + escapeHtml(g.id) + '" data-group-name="' + escapeHtml(g.name) + '"';
+    const actions = canManage ? '<div style="display:flex;gap:6px;">' + cfSmallButtonHTML("admin-pricing-group-edit", attrs, "تعديل") +
+      cfSmallButtonHTML("admin-pricing-group-toggle", attrs + ' data-next-action="' + (g.isActive ? "deactivate" : "activate") + '"', g.isActive ? "تعطيل" : "تفعيل") + '</div>' : "";
+    return '<div class="admin-pricing-group-row" data-group-id="' + escapeHtml(g.id) + '" data-group-name="' + escapeHtml(g.name) + '" style="display:flex;align-items:center;gap:8px;padding:12px 0;border-top:1px solid ' + C.glassBorder + ';">' +
+      '<div style="flex:1;min-width:0;">' +
+        '<div style="font-family:Cairo,sans-serif;font-weight:700;font-size:13px;color:' + C.text + ';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(g.name) + '</div>' +
+        '<div style="font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:10.5px;color:' + C.textFaint + ';">' +
+          '<span class="pricing-group-zone">' + escapeHtml(g.zoneId) + '</span> · <span class="pricing-group-tier" data-tier-rank="' + escapeHtml(String(g.tierRank)) + '">المستوى ' + escapeHtml(String(g.tierRank)) + '</span>' +
+          (g.description ? ' · <span class="pricing-group-description">' + escapeHtml(g.description) + '</span>' : '') + '</div>' +
+      '</div>' +
+      '<span class="pricing-group-status" data-is-active="' + (g.isActive ? "true" : "false") + '">' + AdminTableBadgeHTML(g.isActive ? "نشطة" : "معطّلة", g.isActive ? "#5FBF8F" : "#E0667A") + '</span>' + actions + '</div>';
+  }).join("");
+  if (PRICING_GROUP_BACKEND_DIRECTORY.length === 0) rowsHTML = cfEmptyHTML("admin-pricing-groups-empty", "لا توجد مجموعات تسعير بعد على الخادم الفعلي");
+  const formHTML = m.groupForm.open ? AdminPricingGroupFormDialogHTML(theme) : "";
+  return addHTML + '<div id="admin-pricing-groups-list">' + rowsHTML + '</div>' + formHTML;
+}
+function openAddPricingGroupForm() {
+  state.admin.modules.pricingBackend.groupForm = { cfForm: true, open: true, mode: "add", editingId: null, name: "", zoneId: "SOUTH", tierRank: "0", description: "", submitting: false, error: null };
+  render();
+}
+function openEditPricingGroupForm(id) {
+  const g = findPricingGroupBackendById(id);
+  if (!g) return;
+  state.admin.modules.pricingBackend.groupForm = { cfForm: true, open: true, mode: "edit", editingId: g.id, name: g.name, zoneId: g.zoneId, tierRank: String(g.tierRank), description: g.description || "", submitting: false, error: null };
+  render();
+}
+function AdminPricingGroupFormDialogHTML(theme) {
+  const f = state.admin.modules.pricingBackend.groupForm;
+  let fieldsHTML = cfField("prg-name", "name", "اسم المجموعة", "text", f.name, true);
+  if (f.mode === "add") {
+    fieldsHTML += cfField("prg-zone", "zoneId", "المنطقة (لا يمكن تغييرها لاحقاً)", "select", f.zoneId, true, CF_ZONE_OPTIONS);
+    fieldsHTML += cfField("prg-tier", "tierRank", "مستوى المجموعة (عدد صحيح، لا يمكن تغييره لاحقاً)", "text", f.tierRank, true, null, "numeric");
+  } else {
+    fieldsHTML += cfReadonlyFieldHTML("prg-zone-readonly", "المنطقة", f.zoneId);
+    fieldsHTML += cfReadonlyFieldHTML("prg-tier-readonly", "مستوى المجموعة", f.tierRank);
+  }
+  fieldsHTML += cfField("prg-description", "description", "الوصف (اختياري)", "text", f.description, false);
+  return cfFormDialogHTML("admin-pricing-group-form-overlay", f.mode === "add" ? "إضافة مجموعة تسعير" : "تعديل مجموعة التسعير", f, "pricing-group-form-error", fieldsHTML, "btn-admin-pricing-group-form-cancel", "btn-admin-pricing-group-form-save", theme);
+}
+async function savePricingGroupForm() {
+  const m = state.admin.modules.pricingBackend;
+  const f = m.groupForm;
+  if (f.submitting) return;
+  if (!currentAccountHasAdminActionPermission(CF_MANAGE_PERMISSION)) { f.error = "لا تملك صلاحية تنفيذ هذا الإجراء"; render(); return; }
+  const name = f.name.trim();
+  if (!name) { f.error = "جميع الحقول المطلوبة يجب تعبئتها"; render(); return; }
+  let tierRank = null;
+  if (f.mode === "add") {
+    if (!/^-?\d+$/.test(String(f.tierRank).trim())) { f.error = "مستوى المجموعة يجب أن يكون عدداً صحيحاً"; render(); return; }
+    tierRank = Number(String(f.tierRank).trim());
+  }
+  f.submitting = true; f.error = null;
+  render();
+  let result;
+  if (f.mode === "add") {
+    const payload = { name, zone_id: f.zoneId, tier_rank: tierRank };
+    if (f.description.trim()) payload.description = f.description.trim();
+    result = await BackendPricingGroupApi.create(payload);
+  } else {
+    result = await BackendPricingGroupApi.update(f.editingId, { name, description: f.description.trim() ? f.description.trim() : null });
+  }
+  if (!cfCheck(result, f)) return;
+  f.open = false;
+  await loadPricingBackendFromBackend();
+}
+async function togglePricingGroupStatus(id) {
+  if (!currentAccountHasAdminActionPermission(CF_MANAGE_PERMISSION)) return;
+  const g = findPricingGroupBackendById(id);
+  if (!g) return;
+  const m = state.admin.modules.pricingBackend;
+  const result = g.isActive ? await BackendPricingGroupApi.deactivate(id) : await BackendPricingGroupApi.activate(id);
+  if (!cfCheck(result, m)) return;
+  await loadPricingBackendFromBackend();
+}
+/* ── Pricing assignments ────────────────────────────────────────── */
+function AdminPricingAssignmentsTabHTML(theme, canManage, m) {
+  const partyFilterOptions = [{ value: "", label: "كل الأطراف" }].concat(PRICING_PARTY_CHOICES.map((p) => ({ value: p.id, label: p.label })));
+  const filterHTML = '<div style="margin-bottom:12px;"><div style="font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:12px;color:' + C.textDim + ';margin-bottom:7px;">تصفية حسب الطرف</div>' +
+    '<select id="prasg-party-filter" style="width:100%;background:rgba(255,255,255,0.03);border:1px solid ' + C.glassBorder + ';border-radius:11px;padding:10px 14px;color:' + C.text + ';font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:13px;">' +
+    partyFilterOptions.map((o) => '<option value="' + escapeHtml(o.value) + '"' + (o.value === m.assignmentPartyFilter ? " selected" : "") + '>' + escapeHtml(o.label) + '</option>').join("") + '</select></div>';
+  const addHTML = canManage ? cfPrimaryButtonHTML("btn-admin-pricing-assignment-add", "إضافة تعيين تسعير", theme) : "";
+  let rowsHTML = PRICING_ASSIGNMENT_BACKEND_DIRECTORY.map((a) =>
+    '<div class="admin-pricing-assignment-row" data-assignment-id="' + escapeHtml(a.id) + '" data-party-id="' + escapeHtml(a.partyId) + '" data-group-id="' + escapeHtml(a.pricingGroupId) + '" data-open="' + (a.validTo === null ? "true" : "false") + '" style="padding:12px 0;border-top:1px solid ' + C.glassBorder + ';">' +
+      '<div style="font-family:Cairo,sans-serif;font-weight:700;font-size:13px;color:' + C.text + ';">' + escapeHtml(cfPricingPartyLabel(a.partyId)) + ' ← ' + escapeHtml(cfPricingGroupName(a.pricingGroupId)) + '</div>' +
+      '<div style="font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:10.5px;color:' + C.textFaint + ';">من ' + cfFormatTimestamp(a.validFrom) + ' · ' + (a.validTo === null ? 'ساري حالياً' : 'حتى ' + cfFormatTimestamp(a.validTo)) + (a.reason ? ' · ' + escapeHtml(a.reason) : '') + '</div>' +
+    '</div>').join("");
+  if (PRICING_ASSIGNMENT_BACKEND_DIRECTORY.length === 0) rowsHTML = cfEmptyHTML("admin-pricing-assignments-empty", "لا توجد تعيينات تسعير بعد على الخادم الفعلي");
+  const formHTML = m.assignmentForm.open ? AdminPricingAssignmentFormDialogHTML(theme) : "";
+  return filterHTML + addHTML + '<div id="admin-pricing-assignments-list">' + rowsHTML + '</div>' + formHTML;
+}
+function openAddPricingAssignmentForm() {
+  const activeGroups = PRICING_GROUP_BACKEND_DIRECTORY.filter((g) => g.isActive);
+  state.admin.modules.pricingBackend.assignmentForm = { cfForm: true, open: true, partyId: PRICING_PARTY_CHOICES.length > 0 ? PRICING_PARTY_CHOICES[0].id : "", pricingGroupId: activeGroups.length > 0 ? activeGroups[0].id : "", validFrom: "", reason: "", submitting: false, error: null };
+  render();
+}
+function AdminPricingAssignmentFormDialogHTML(theme) {
+  const f = state.admin.modules.pricingBackend.assignmentForm;
+  const activeGroups = PRICING_GROUP_BACKEND_DIRECTORY.filter((g) => g.isActive);
+  let fieldsHTML = "";
+  if (PRICING_PARTY_CHOICES.length === 0) fieldsHTML += cfNoticeHTML("pricing-assignment-no-parties", "لا توجد أطراف (وكلاء) متاحة للاختيار.");
+  if (activeGroups.length === 0) fieldsHTML += cfNoticeHTML("pricing-assignment-no-groups", "لا توجد مجموعات تسعير نشطة. أنشئ مجموعة وفعّلها أولاً.");
+  fieldsHTML += cfField("prasg-party", "partyId", "الطرف (الوكيل)", "select", f.partyId, true, PRICING_PARTY_CHOICES.map((p) => ({ value: p.id, label: p.label })));
+  fieldsHTML += cfField("prasg-group", "pricingGroupId", "مجموعة التسعير (النشطة فقط)", "select", f.pricingGroupId, true, activeGroups.map((g) => ({ value: g.id, label: g.name + " — " + g.zoneId })));
+  fieldsHTML += cfField("prasg-valid-from", "validFrom", "يسري من (اختياري، تاريخ ISO مثل 2026-10-05T00:00:00Z — الافتراضي الآن)", "text", f.validFrom, false);
+  fieldsHTML += cfField("prasg-reason", "reason", "السبب (اختياري)", "text", f.reason, false);
+  return cfFormDialogHTML("admin-pricing-assignment-form-overlay", "إضافة تعيين تسعير", f, "pricing-assignment-form-error", fieldsHTML, "btn-admin-pricing-assignment-form-cancel", "btn-admin-pricing-assignment-form-save", theme);
+}
+/** Optional ISO-8601 text → ISO string, "" → undefined, invalid → null. */
+function cfParseOptionalIsoDate(text) {
+  const t = String(text).trim();
+  if (!t) return undefined;
+  const d = new Date(t);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+async function savePricingAssignmentForm() {
+  const m = state.admin.modules.pricingBackend;
+  const f = m.assignmentForm;
+  if (f.submitting) return;
+  if (!currentAccountHasAdminActionPermission(CF_MANAGE_PERMISSION)) { f.error = "لا تملك صلاحية تنفيذ هذا الإجراء"; render(); return; }
+  if (!f.partyId || !f.pricingGroupId) { f.error = "جميع الحقول المطلوبة يجب تعبئتها"; render(); return; }
+  const validFrom = cfParseOptionalIsoDate(f.validFrom);
+  if (validFrom === null) { f.error = "تاريخ البداية غير صالح (استخدم صيغة ISO مثل 2026-10-05T00:00:00Z)"; render(); return; }
+  f.submitting = true; f.error = null;
+  render();
+  const payload = { party_id: f.partyId, pricing_group_id: f.pricingGroupId };
+  if (validFrom !== undefined) payload.valid_from = validFrom;
+  if (f.reason.trim()) payload.reason = f.reason.trim();
+  const result = await BackendPricingAssignmentApi.create(payload);
+  if (!cfCheck(result, f)) return;
+  f.open = false;
+  await loadPricingBackendFromBackend();
+}
+/* ── Service pricing ────────────────────────────────────────────── */
+function AdminServicePricingTabHTML(theme, canManage, m) {
+  const groupFilterOptions = [{ value: "", label: "كل المجموعات" }].concat(PRICING_GROUP_BACKEND_DIRECTORY.map((g) => ({ value: g.id, label: g.name })));
+  const filterHTML = '<div style="margin-bottom:12px;"><div style="font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:12px;color:' + C.textDim + ';margin-bottom:7px;">تصفية حسب مجموعة التسعير</div>' +
+    '<select id="prsp-group-filter" style="width:100%;background:rgba(255,255,255,0.03);border:1px solid ' + C.glassBorder + ';border-radius:11px;padding:10px 14px;color:' + C.text + ';font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:13px;">' +
+    groupFilterOptions.map((o) => '<option value="' + escapeHtml(o.value) + '"' + (o.value === m.servicePricingGroupFilter ? " selected" : "") + '>' + escapeHtml(o.label) + '</option>').join("") + '</select></div>';
+  const addHTML = canManage ? cfPrimaryButtonHTML("btn-admin-service-pricing-add", "إضافة سعر خدمة (إصدار جديد)", theme) : "";
+  let rowsHTML = SERVICE_PRICING_BACKEND_DIRECTORY.map((p) => {
+    const pkg = cfCatalogPackageFor(p.serviceCode, p.packageCode);
+    const identity = pkg ? '<span class="sp-package-uuid" style="direction:ltr;unicode-bidi:embed;">UUID ' + escapeHtml(pkg.id) + '</span>' : '<span class="sp-package-uuid" data-catalog="missing">الباقة غير موجودة في الكتالوج (سعر قديم بكود نصي)</span>';
+    return '<div class="admin-service-pricing-row" data-group-id="' + escapeHtml(p.pricingGroupId) + '" data-service-code="' + escapeHtml(p.serviceCode) + '" data-package-code="' + escapeHtml(p.packageCode) + '" data-version="' + escapeHtml(String(p.version)) + '" data-open="' + (p.validTo === null ? "true" : "false") + '" style="padding:12px 0;border-top:1px solid ' + C.glassBorder + ';">' +
+      '<div style="font-family:Cairo,sans-serif;font-weight:700;font-size:13px;color:' + C.text + ';">' + escapeHtml(p.serviceCode) + ' / ' + escapeHtml(p.packageCode) + ' — <span class="sp-price" data-currency="' + escapeHtml(p.currencyCode) + '">' + escapeHtml(p.retailPrice) + ' ' + escapeHtml(p.currencyCode) + '</span></div>' +
+      '<div style="font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:10.5px;color:' + C.textFaint + ';">' + escapeHtml(cfPricingGroupName(p.pricingGroupId)) + ' · الإصدار ' + escapeHtml(String(p.version)) + ' · من ' + cfFormatTimestamp(p.validFrom) + ' · ' + (p.validTo === null ? 'ساري حالياً' : 'حتى ' + cfFormatTimestamp(p.validTo)) + '</div>' +
+      '<div style="font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:9.5px;color:' + C.textGhost + ';">' + identity + '</div></div>';
+  }).join("");
+  if (SERVICE_PRICING_BACKEND_DIRECTORY.length === 0) rowsHTML = cfEmptyHTML("admin-service-pricing-empty", "لا توجد أسعار خدمات بعد على الخادم الفعلي");
+  const formHTML = m.servicePricingForm.open ? AdminServicePricingFormDialogHTML(theme) : "";
+  return filterHTML + addHTML + '<div id="admin-service-pricing-list">' + rowsHTML + '</div>' + formHTML;
+}
+/** The Package this form submits: the chosen one when it belongs to the chosen service, else the service's first package (same rule for display and submit). */
+function cfEffectiveServicePricingPackage(f) {
+  const forService = PACKAGE_BACKEND_DIRECTORY.filter((p) => p.serviceCode === f.serviceCode);
+  return forService.find((p) => p.id === f.packageUuid) || forService[0] || null;
+}
+function openAddServicePricingForm() {
+  const activeGroups = PRICING_GROUP_BACKEND_DIRECTORY.filter((g) => g.isActive);
+  const firstService = SERVICE_BACKEND_DIRECTORY.find((s) => PACKAGE_BACKEND_DIRECTORY.some((p) => p.serviceCode === s.code)) || SERVICE_BACKEND_DIRECTORY[0];
+  state.admin.modules.pricingBackend.servicePricingForm = { cfForm: true, open: true, pricingGroupId: activeGroups.length > 0 ? activeGroups[0].id : "", serviceCode: firstService ? firstService.code : "", packageUuid: "", currencyCode: "YER", retailPrice: "", validFrom: "", submitting: false, error: null };
+  render();
+}
+function AdminServicePricingFormDialogHTML(theme) {
+  const f = state.admin.modules.pricingBackend.servicePricingForm;
+  const activeGroups = PRICING_GROUP_BACKEND_DIRECTORY.filter((g) => g.isActive);
+  const forService = PACKAGE_BACKEND_DIRECTORY.filter((p) => p.serviceCode === f.serviceCode);
+  const effective = cfEffectiveServicePricingPackage(f);
+  let fieldsHTML = "";
+  if (activeGroups.length === 0) fieldsHTML += cfNoticeHTML("service-pricing-no-groups", "لا توجد مجموعات تسعير نشطة. أنشئ مجموعة وفعّلها أولاً.");
+  fieldsHTML += cfField("prsp-group", "pricingGroupId", "مجموعة التسعير (النشطة فقط)", "select", f.pricingGroupId, true, activeGroups.map((g) => ({ value: g.id, label: g.name + " — " + g.zoneId })));
+  fieldsHTML += cfField("prsp-service", "serviceCode", "الخدمة", "select", f.serviceCode, true, SERVICE_BACKEND_DIRECTORY.map((s) => ({ value: s.code, label: s.code + " — " + s.name })));
+  if (forService.length === 0) fieldsHTML += cfNoticeHTML("service-pricing-no-packages", "لا توجد باقات في الكتالوج لهذه الخدمة. أنشئ باقة أولاً من وحدة «الباقات (النظام الفعلي)».");
+  fieldsHTML += cfField("prsp-package", "packageUuid", "الباقة (من الكتالوج — الهوية المعتمدة UUID)", "select", effective ? effective.id : "", true,
+    forService.map((p) => ({ value: p.id, label: p.code + " — " + p.name + " (" + p.status + ")" })));
+  if (effective) fieldsHTML += cfReadonlyFieldHTML("prsp-package-uuid-readonly", "معرّف الباقة المرسل (UUID)", effective.id);
+  fieldsHTML += cfField("prsp-currency", "currencyCode", "العملة", "select", f.currencyCode, true, CF_CURRENCY_OPTIONS);
+  fieldsHTML += cfField("prsp-price", "retailPrice", "سعر البيع (عدد عشري موجب، حتى 4 منازل)", "text", f.retailPrice, true, null, "decimal");
+  fieldsHTML += cfField("prsp-valid-from", "validFrom", "يسري من (اختياري، تاريخ ISO — الافتراضي الآن؛ يجب أن يكون لاحقاً لبداية الإصدار الحالي)", "text", f.validFrom, false);
+  return cfFormDialogHTML("admin-service-pricing-form-overlay", "إضافة سعر خدمة (إصدار جديد)", f, "service-pricing-form-error", fieldsHTML, "btn-admin-service-pricing-form-cancel", "btn-admin-service-pricing-form-save", theme);
+}
+async function saveServicePricingForm() {
+  const m = state.admin.modules.pricingBackend;
+  const f = m.servicePricingForm;
+  if (f.submitting) return;
+  if (!currentAccountHasAdminActionPermission(CF_MANAGE_PERMISSION)) { f.error = "لا تملك صلاحية تنفيذ هذا الإجراء"; render(); return; }
+  const pkg = cfEffectiveServicePricingPackage(f);
+  const price = f.retailPrice.trim();
+  if (!f.pricingGroupId || !f.serviceCode || !pkg || !price) { f.error = "جميع الحقول المطلوبة يجب تعبئتها (ويجب اختيار باقة من الكتالوج)"; render(); return; }
+  if (!/^\d+(\.\d{1,4})?$/.test(price) || Number(price) <= 0) { f.error = "السعر يجب أن يكون عدداً عشرياً موجباً (حتى 4 منازل)"; render(); return; }
+  const validFrom = cfParseOptionalIsoDate(f.validFrom);
+  if (validFrom === null) { f.error = "تاريخ البداية غير صالح (استخدم صيغة ISO مثل 2026-10-05T00:00:00Z)"; render(); return; }
+  f.submitting = true; f.error = null;
+  render();
+  // Canonical package identity: the UUID and the codes all come from the Package API record the admin picked.
+  const payload = { pricing_group_id: f.pricingGroupId, service_code: pkg.serviceCode, package_id: pkg.code, package_uuid: pkg.id, currency_code: f.currencyCode, retail_price: price };
+  if (validFrom !== undefined) payload.valid_from = validFrom;
+  const result = await BackendServicePricingApi.create(payload);
+  if (!cfCheck(result, f)) return;
+  f.open = false;
+  await loadPricingBackendFromBackend();
+}
+function bindPricingBackendEvents() {
+  const $ = (id) => document.getElementById(id);
+  const m = state.admin.modules.pricingBackend;
+  document.querySelectorAll(".pricing-backend-tab").forEach((btn) => { btn.onclick = () => { m.tab = btn.getAttribute("data-tab-id"); render(); }; });
+  if ($("btn-admin-pricing-backend-retry")) $("btn-admin-pricing-backend-retry").onclick = () => loadPricingBackendFromBackend();
+  // groups
+  if ($("btn-admin-pricing-group-add")) $("btn-admin-pricing-group-add").onclick = () => openAddPricingGroupForm();
+  document.querySelectorAll(".admin-pricing-group-edit").forEach((btn) => { btn.onclick = () => openEditPricingGroupForm(btn.getAttribute("data-group-id")); });
+  document.querySelectorAll(".admin-pricing-group-toggle").forEach((btn) => { btn.onclick = () => togglePricingGroupStatus(btn.getAttribute("data-group-id")); });
+  if ($("btn-admin-pricing-group-form-cancel")) $("btn-admin-pricing-group-form-cancel").onclick = () => { m.groupForm.open = false; render(); };
+  if ($("btn-admin-pricing-group-form-save")) $("btn-admin-pricing-group-form-save").onclick = () => savePricingGroupForm();
+  // assignments
+  if ($("btn-admin-pricing-assignment-add")) $("btn-admin-pricing-assignment-add").onclick = () => openAddPricingAssignmentForm();
+  if ($("btn-admin-pricing-assignment-form-cancel")) $("btn-admin-pricing-assignment-form-cancel").onclick = () => { m.assignmentForm.open = false; render(); };
+  if ($("btn-admin-pricing-assignment-form-save")) $("btn-admin-pricing-assignment-form-save").onclick = () => savePricingAssignmentForm();
+  if ($("prasg-party-filter")) $("prasg-party-filter").onchange = (e) => { m.assignmentPartyFilter = e.target.value; loadPricingBackendFromBackend(); };
+  // service pricing
+  if ($("btn-admin-service-pricing-add")) $("btn-admin-service-pricing-add").onclick = () => openAddServicePricingForm();
+  if ($("btn-admin-service-pricing-form-cancel")) $("btn-admin-service-pricing-form-cancel").onclick = () => { m.servicePricingForm.open = false; render(); };
+  if ($("btn-admin-service-pricing-form-save")) $("btn-admin-service-pricing-form-save").onclick = () => saveServicePricingForm();
+  if ($("prsp-group-filter")) $("prsp-group-filter").onchange = (e) => { m.servicePricingGroupFilter = e.target.value; loadPricingBackendFromBackend(); };
+}
+CF_BINDERS.push(bindPricingBackendEvents);
+
+/* ════════════════════════════════════════════════════════════════════
+   MARGIN POLICIES + FX RATES ADMIN (real backend) — `pricing-admin-routes.ts`:
+     /api/v1/admin/margin-policies   POST (creates a new VERSION) · GET (?scope=&service_code=)
+     /api/v1/admin/fx-rates          POST (append-only) · GET (?from=&to=)
+   Both are append-only histories: no update and no delete exist on the backend, so none is offered. No rule and no
+   rate is hard-coded here — every value is typed by an administrator and re-validated by the backend (the margin's
+   fixed minimum is always SAR, a server-fixed currency shown read-only; amounts travel as decimal STRINGS).
+   ════════════════════════════════════════════════════════════════════ */
+const BackendMarginPolicyApi = {
+  list(filter) {
+    const params = [];
+    if (filter && filter.scope) params.push("scope=" + encodeURIComponent(filter.scope));
+    if (filter && filter.serviceCode) params.push("service_code=" + encodeURIComponent(filter.serviceCode));
+    return ApiClient.get("/api/v1/admin/margin-policies" + (params.length ? "?" + params.join("&") : ""));
+  },
+  create(payload) { return ApiClient.post("/api/v1/admin/margin-policies", payload); },
+};
+const BackendFxRateApi = {
+  list(filter) {
+    const params = [];
+    if (filter && filter.from) params.push("from=" + encodeURIComponent(filter.from));
+    if (filter && filter.to) params.push("to=" + encodeURIComponent(filter.to));
+    return ApiClient.get("/api/v1/admin/fx-rates" + (params.length ? "?" + params.join("&") : ""));
+  },
+  create(payload) { return ApiClient.post("/api/v1/admin/fx-rates", payload); },
+};
+const CF_MARGIN_SCOPE_OPTIONS = [
+  { value: "GLOBAL", label: "عام (GLOBAL)" },
+  { value: "SERVICE", label: "خدمة محددة (SERVICE)" },
+];
+const MARGIN_POLICY_BACKEND_DIRECTORY = [];
+const FX_RATE_BACKEND_DIRECTORY = [];
+function mapBackendMarginPolicyToDirectoryRecord(dto) {
+  return { id: dto.id, scope: dto.scope, serviceCode: dto.service_code, fixedMinimumAmount: dto.fixed_minimum_amount, fixedMinimumCurrency: dto.fixed_minimum_currency, percentageMinimum: dto.percentage_minimum, validFrom: dto.valid_from, validTo: dto.valid_to, version: dto.version };
+}
+function mapBackendFxRateToDirectoryRecord(dto) {
+  return { id: dto.id, fromCurrency: dto.from_currency, toCurrency: dto.to_currency, rate: dto.rate, effectiveFrom: dto.effective_from, source: dto.source };
+}
+async function loadMarginFxBackendFromBackend() {
+  const m = state.admin.modules.marginFxBackend;
+  m.loading = true; m.loadError = null; m.notice = null;
+  render();
+  const [margins, rates, services] = await Promise.all([
+    BackendMarginPolicyApi.list({ scope: m.marginScopeFilter || null, serviceCode: m.marginServiceFilter || null }),
+    BackendFxRateApi.list({ from: m.fxFromFilter || null, to: m.fxToFilter || null }),
+    BackendServiceApi.list(),
+  ]);
+  m.loading = false;
+  if ([margins, rates, services].some((r) => r.status === 401)) { handleApiUnauthorized(); return; }
+  const failed = [margins, rates].find((r) => !r.ok);
+  if (failed) {
+    m.loadError = describeApiError(failed);
+    render();
+    return;
+  }
+  MARGIN_POLICY_BACKEND_DIRECTORY.length = 0;
+  MARGIN_POLICY_BACKEND_DIRECTORY.push(...margins.data.map(mapBackendMarginPolicyToDirectoryRecord));
+  FX_RATE_BACKEND_DIRECTORY.length = 0;
+  FX_RATE_BACKEND_DIRECTORY.push(...rates.data.map(mapBackendFxRateToDirectoryRecord));
+  cfFillServicesMirror(services);
+  if (!services.ok) m.notice = "تعذّر تحميل قائمة الخدمات (صلاحية غير كافية على الخادم).";
+  render();
+}
+const MARGIN_FX_BACKEND_TABS = [
+  { id: "margin", label: "سياسات الهامش" },
+  { id: "fx", label: "أسعار الصرف" },
+];
+function cfFilterSelectHTML(id, label, options, selected) {
+  return '<div style="flex:1;min-width:130px;"><div style="font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:12px;color:' + C.textDim + ';margin-bottom:7px;">' + escapeHtml(label) + '</div>' +
+    '<select id="' + id + '" style="width:100%;background:rgba(255,255,255,0.03);border:1px solid ' + C.glassBorder + ';border-radius:11px;padding:10px 14px;color:' + C.text + ';font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:13px;">' +
+    options.map((o) => '<option value="' + escapeHtml(o.value) + '"' + (o.value === selected ? " selected" : "") + '>' + escapeHtml(o.label) + '</option>').join("") + '</select></div>';
+}
+function AdminMarginFxBackendModuleHTML(theme) {
+  const canManage = currentAccountHasAdminActionPermission(CF_MANAGE_PERMISSION);
+  const m = state.admin.modules.marginFxBackend;
+  if (m.loading) return cfLoadingHTML("admin-margin-fx-backend-loading", "جارٍ تحميل الهامش وأسعار الصرف من الخادم…");
+  if (m.loadError) return cfErrorHTML("admin-margin-fx-backend-error", m.loadError, "btn-admin-margin-fx-backend-retry");
+  const tabsHTML = cfTabsHTML("margin-fx-backend-tab", MARGIN_FX_BACKEND_TABS, m.tab);
+  const bodyHTML = m.tab === "fx" ? AdminFxRatesTabHTML(theme, canManage, m) : AdminMarginPoliciesTabHTML(theme, canManage, m);
+  return cfNoticeHTML("admin-margin-fx-backend-notice", m.notice) + tabsHTML + bodyHTML;
+}
+/* ── Margin policies ────────────────────────────────────────────── */
+function AdminMarginPoliciesTabHTML(theme, canManage, m) {
+  const scopeOptions = [{ value: "", label: "كل النطاقات" }].concat(CF_MARGIN_SCOPE_OPTIONS);
+  const serviceOptions = [{ value: "", label: "كل الخدمات" }].concat(SERVICE_BACKEND_DIRECTORY.map((s) => ({ value: s.code, label: s.code })));
+  const filterHTML = '<div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap;">' + cfFilterSelectHTML("mrg-scope-filter", "تصفية بالنطاق", scopeOptions, m.marginScopeFilter) + cfFilterSelectHTML("mrg-service-filter", "تصفية بالخدمة", serviceOptions, m.marginServiceFilter) + '</div>';
+  const addHTML = canManage ? cfPrimaryButtonHTML("btn-admin-margin-policy-add", "إضافة سياسة هامش (إصدار جديد)", theme) : "";
+  let rowsHTML = MARGIN_POLICY_BACKEND_DIRECTORY.map((p) =>
+    '<div class="admin-margin-policy-row" data-scope="' + escapeHtml(p.scope) + '" data-service-code="' + escapeHtml(p.serviceCode || "") + '" data-version="' + escapeHtml(String(p.version)) + '" data-open="' + (p.validTo === null ? "true" : "false") + '" style="padding:12px 0;border-top:1px solid ' + C.glassBorder + ';">' +
+      '<div style="font-family:Cairo,sans-serif;font-weight:700;font-size:13px;color:' + C.text + ';">' + escapeHtml(p.scope) + (p.serviceCode ? ' — <span class="margin-service" style="direction:ltr;unicode-bidi:embed;">' + escapeHtml(p.serviceCode) + '</span>' : '') + '</div>' +
+      '<div style="font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:10.5px;color:' + C.textFaint + ';">' +
+        'الحد الأدنى الثابت: <span class="margin-fixed" data-currency="' + escapeHtml(p.fixedMinimumCurrency) + '">' + escapeHtml(p.fixedMinimumAmount) + ' ' + escapeHtml(p.fixedMinimumCurrency) + '</span> · ' +
+        'النسبة الدنيا: <span class="margin-percentage">' + escapeHtml(p.percentageMinimum) + '</span> · الإصدار ' + escapeHtml(String(p.version)) + '</div>' +
+      '<div style="font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:10px;color:' + C.textGhost + ';">من ' + cfFormatTimestamp(p.validFrom) + ' · ' + (p.validTo === null ? 'ساري حالياً' : 'حتى ' + cfFormatTimestamp(p.validTo)) + '</div>' +
+    '</div>').join("");
+  if (MARGIN_POLICY_BACKEND_DIRECTORY.length === 0) rowsHTML = cfEmptyHTML("admin-margin-policies-empty", "لا توجد سياسات هامش بعد على الخادم الفعلي");
+  const formHTML = m.marginForm.open ? AdminMarginPolicyFormDialogHTML(theme) : "";
+  return filterHTML + addHTML + '<div id="admin-margin-policies-list">' + rowsHTML + '</div>' + formHTML;
+}
+function openAddMarginPolicyForm() {
+  state.admin.modules.marginFxBackend.marginForm = { cfForm: true, open: true, scope: "GLOBAL", serviceCode: SERVICE_BACKEND_DIRECTORY.length > 0 ? SERVICE_BACKEND_DIRECTORY[0].code : "", fixedMinimumAmount: "", percentageMinimum: "", validFrom: "", submitting: false, error: null };
+  render();
+}
+function AdminMarginPolicyFormDialogHTML(theme) {
+  const f = state.admin.modules.marginFxBackend.marginForm;
+  let fieldsHTML = cfField("mrg-scope", "scope", "النطاق", "select", f.scope, true, CF_MARGIN_SCOPE_OPTIONS);
+  if (f.scope === "SERVICE") fieldsHTML += cfField("mrg-service", "serviceCode", "الخدمة", "select", f.serviceCode, true, SERVICE_BACKEND_DIRECTORY.map((s) => ({ value: s.code, label: s.code + " — " + s.name })));
+  fieldsHTML += cfField("mrg-fixed", "fixedMinimumAmount", "الحد الأدنى الثابت (عدد عشري غير سالب)", "text", f.fixedMinimumAmount, true, null, "decimal");
+  fieldsHTML += cfReadonlyFieldHTML("mrg-fixed-currency-readonly", "عملة الحد الأدنى الثابت (ثابتة من الخادم)", "SAR");
+  fieldsHTML += cfField("mrg-percentage", "percentageMinimum", "النسبة الدنيا (عدد عشري غير سالب كما يعرّفه الخادم، مثل 0.0200)", "text", f.percentageMinimum, true, null, "decimal");
+  fieldsHTML += cfField("mrg-valid-from", "validFrom", "يسري من (اختياري، تاريخ ISO — الافتراضي الآن؛ يجب أن يكون لاحقاً لبداية السياسة الحالية)", "text", f.validFrom, false);
+  return cfFormDialogHTML("admin-margin-policy-form-overlay", "إضافة سياسة هامش (إصدار جديد)", f, "margin-policy-form-error", fieldsHTML, "btn-admin-margin-policy-form-cancel", "btn-admin-margin-policy-form-save", theme);
+}
+async function saveMarginPolicyForm() {
+  const m = state.admin.modules.marginFxBackend;
+  const f = m.marginForm;
+  if (f.submitting) return;
+  if (!currentAccountHasAdminActionPermission(CF_MANAGE_PERMISSION)) { f.error = "لا تملك صلاحية تنفيذ هذا الإجراء"; render(); return; }
+  const fixed = f.fixedMinimumAmount.trim();
+  const percentage = f.percentageMinimum.trim();
+  if (!fixed || !percentage || (f.scope === "SERVICE" && !f.serviceCode)) { f.error = "جميع الحقول المطلوبة يجب تعبئتها"; render(); return; }
+  if (!/^\d+(\.\d+)?$/.test(fixed) || !/^\d+(\.\d+)?$/.test(percentage)) { f.error = "القيم يجب أن تكون أعداداً عشرية غير سالبة"; render(); return; }
+  const validFrom = cfParseOptionalIsoDate(f.validFrom);
+  if (validFrom === null) { f.error = "تاريخ البداية غير صالح (استخدم صيغة ISO مثل 2026-10-05T00:00:00Z)"; render(); return; }
+  f.submitting = true; f.error = null;
+  render();
+  const payload = { scope: f.scope, fixed_minimum_amount: fixed, percentage_minimum: percentage };
+  if (f.scope === "SERVICE") payload.service_code = f.serviceCode;
+  if (validFrom !== undefined) payload.valid_from = validFrom;
+  const result = await BackendMarginPolicyApi.create(payload);
+  if (!cfCheck(result, f)) return;
+  f.open = false;
+  await loadMarginFxBackendFromBackend();
+}
+/* ── FX rates ───────────────────────────────────────────────────── */
+function AdminFxRatesTabHTML(theme, canManage, m) {
+  const currencyOptions = [{ value: "", label: "الكل" }].concat(CF_CURRENCY_OPTIONS);
+  const filterHTML = '<div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap;">' + cfFilterSelectHTML("fx-from-filter", "من عملة", currencyOptions, m.fxFromFilter) + cfFilterSelectHTML("fx-to-filter", "إلى عملة", currencyOptions, m.fxToFilter) + '</div>';
+  const addHTML = canManage ? cfPrimaryButtonHTML("btn-admin-fx-rate-add", "إضافة سعر صرف (يُلحق بالسجل)", theme) : "";
+  let rowsHTML = FX_RATE_BACKEND_DIRECTORY.map((r) =>
+    '<div class="admin-fx-rate-row" data-from="' + escapeHtml(r.fromCurrency) + '" data-to="' + escapeHtml(r.toCurrency) + '" data-rate="' + escapeHtml(r.rate) + '" style="padding:12px 0;border-top:1px solid ' + C.glassBorder + ';">' +
+      '<div style="font-family:Cairo,sans-serif;font-weight:700;font-size:13px;color:' + C.text + ';">' + escapeHtml(r.fromCurrency) + ' → ' + escapeHtml(r.toCurrency) + ' = <span class="fx-rate">' + escapeHtml(r.rate) + '</span></div>' +
+      '<div style="font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:10.5px;color:' + C.textFaint + ';">يسري من ' + cfFormatTimestamp(r.effectiveFrom) + (r.source ? ' · المصدر: ' + escapeHtml(r.source) : '') + '</div>' +
+    '</div>').join("");
+  if (FX_RATE_BACKEND_DIRECTORY.length === 0) rowsHTML = cfEmptyHTML("admin-fx-rates-empty", "لا توجد أسعار صرف بعد على الخادم الفعلي");
+  const formHTML = m.fxForm.open ? AdminFxRateFormDialogHTML(theme) : "";
+  return filterHTML + addHTML + '<div id="admin-fx-rates-list">' + rowsHTML + '</div>' + formHTML;
+}
+function openAddFxRateForm() {
+  state.admin.modules.marginFxBackend.fxForm = { cfForm: true, open: true, fromCurrency: "YER", toCurrency: "SAR", rate: "", effectiveFrom: "", source: "", submitting: false, error: null };
+  render();
+}
+function AdminFxRateFormDialogHTML(theme) {
+  const f = state.admin.modules.marginFxBackend.fxForm;
+  let fieldsHTML = cfField("fx-from", "fromCurrency", "من عملة", "select", f.fromCurrency, true, CF_CURRENCY_OPTIONS);
+  fieldsHTML += cfField("fx-to", "toCurrency", "إلى عملة (يجب أن تختلف عن الأولى)", "select", f.toCurrency, true, CF_CURRENCY_OPTIONS);
+  fieldsHTML += cfField("fx-rate", "rate", "السعر (عدد عشري موجب، حتى 8 منازل)", "text", f.rate, true, null, "decimal");
+  fieldsHTML += cfField("fx-effective-from", "effectiveFrom", "يسري من (اختياري، تاريخ ISO — الافتراضي الآن)", "text", f.effectiveFrom, false);
+  fieldsHTML += cfField("fx-source", "source", "المصدر (اختياري)", "text", f.source, false);
+  return cfFormDialogHTML("admin-fx-rate-form-overlay", "إضافة سعر صرف", f, "fx-rate-form-error", fieldsHTML, "btn-admin-fx-rate-form-cancel", "btn-admin-fx-rate-form-save", theme);
+}
+async function saveFxRateForm() {
+  const m = state.admin.modules.marginFxBackend;
+  const f = m.fxForm;
+  if (f.submitting) return;
+  if (!currentAccountHasAdminActionPermission(CF_MANAGE_PERMISSION)) { f.error = "لا تملك صلاحية تنفيذ هذا الإجراء"; render(); return; }
+  const rate = f.rate.trim();
+  if (!rate) { f.error = "جميع الحقول المطلوبة يجب تعبئتها"; render(); return; }
+  if (f.fromCurrency === f.toCurrency) { f.error = "يجب أن تختلف العملتان"; render(); return; }
+  if (!/^\d+(\.\d{1,8})?$/.test(rate) || /^0+(\.0+)?$/.test(rate)) { f.error = "السعر يجب أن يكون عدداً عشرياً موجباً (حتى 8 منازل)"; render(); return; }
+  const effectiveFrom = cfParseOptionalIsoDate(f.effectiveFrom);
+  if (effectiveFrom === null) { f.error = "تاريخ البداية غير صالح (استخدم صيغة ISO مثل 2026-10-05T00:00:00Z)"; render(); return; }
+  f.submitting = true; f.error = null;
+  render();
+  const payload = { from_currency: f.fromCurrency, to_currency: f.toCurrency, rate };
+  if (effectiveFrom !== undefined) payload.effective_from = effectiveFrom;
+  if (f.source.trim()) payload.source = f.source.trim();
+  const result = await BackendFxRateApi.create(payload);
+  if (!cfCheck(result, f)) return;
+  f.open = false;
+  await loadMarginFxBackendFromBackend();
+}
+function bindMarginFxBackendEvents() {
+  const $ = (id) => document.getElementById(id);
+  const m = state.admin.modules.marginFxBackend;
+  document.querySelectorAll(".margin-fx-backend-tab").forEach((btn) => { btn.onclick = () => { m.tab = btn.getAttribute("data-tab-id"); render(); }; });
+  if ($("btn-admin-margin-fx-backend-retry")) $("btn-admin-margin-fx-backend-retry").onclick = () => loadMarginFxBackendFromBackend();
+  if ($("btn-admin-margin-policy-add")) $("btn-admin-margin-policy-add").onclick = () => openAddMarginPolicyForm();
+  if ($("btn-admin-margin-policy-form-cancel")) $("btn-admin-margin-policy-form-cancel").onclick = () => { m.marginForm.open = false; render(); };
+  if ($("btn-admin-margin-policy-form-save")) $("btn-admin-margin-policy-form-save").onclick = () => saveMarginPolicyForm();
+  if ($("mrg-scope-filter")) $("mrg-scope-filter").onchange = (e) => { m.marginScopeFilter = e.target.value; loadMarginFxBackendFromBackend(); };
+  if ($("mrg-service-filter")) $("mrg-service-filter").onchange = (e) => { m.marginServiceFilter = e.target.value; loadMarginFxBackendFromBackend(); };
+  if ($("btn-admin-fx-rate-add")) $("btn-admin-fx-rate-add").onclick = () => openAddFxRateForm();
+  if ($("btn-admin-fx-rate-form-cancel")) $("btn-admin-fx-rate-form-cancel").onclick = () => { m.fxForm.open = false; render(); };
+  if ($("btn-admin-fx-rate-form-save")) $("btn-admin-fx-rate-form-save").onclick = () => saveFxRateForm();
+  if ($("fx-from-filter")) $("fx-from-filter").onchange = (e) => { m.fxFromFilter = e.target.value; loadMarginFxBackendFromBackend(); };
+  if ($("fx-to-filter")) $("fx-to-filter").onchange = (e) => { m.fxToFilter = e.target.value; loadMarginFxBackendFromBackend(); };
+}
+CF_BINDERS.push(bindMarginFxBackendEvents);
+
+/* ════════════════════════════════════════════════════════════════════
+   LEGACY / DEMO LOCAL ADMIN MODULES — separation from the real-backend modules.
+   Each module below still works on its own in-memory arrays, because other (agent / customer / employee) screens read
+   those same arrays and nothing here deletes legacy code. What changes is honesty: the module is labelled local/demo
+   and shows a banner saying that nothing edited here reaches the real backend, and which real module to use instead.
+   Local sources that have a real replacement (and are therefore NOT written by the real modules, nor kept in sync):
+     Packages  → CATALOG_PACKAGES / TELECOM_PACKAGE_DIRECTORY (ADMIN_CATALOG_PACKAGES forms)   ⇒ packagesBackend
+     Gateways  → GATEWAY_DIRECTORY (commissions module's gateway form)                          ⇒ gatewaysBackend
+     Pricing   → PRICING_RULE_DIRECTORY / COMMERCIAL_RULE_DIRECTORY / CATEGORY_COMMERCIAL_PROFILE_DIRECTORY ⇒ pricingBackend
+     Margin/FX → CURRENCY_DIRECTORY (local currency rows)                                       ⇒ marginFxBackend
+     Services / Agents / Operations → MANUAL_SERVICE_CONFIGURATION_DIRECTORY / AGENT_DIRECTORY / MOCK_OPERATIONS ⇒ servicesBackend / agentsBackend / operationsBackend
+   ════════════════════════════════════════════════════════════════════ */
+const ADMIN_LEGACY_LOCAL_MODULES = {
+  services: ["servicesBackend"],
+  agents: ["agentsBackend"],
+  operations: ["operationsBackend"],
+  commissions: ["pricingBackend", "gatewaysBackend", "marginFxBackend"],
+  games: ["packagesBackend"],
+  telecomCompanies: ["packagesBackend"],
+};
+function adminLegacyBannerHTML(moduleId) {
+  const replacements = ADMIN_LEGACY_LOCAL_MODULES[moduleId];
+  if (!replacements) return "";
+  const names = replacements.map((id) => { const item = findAdminNavItemById(id); return item ? '«' + escapeHtml(item.label) + '»' : ""; }).filter(Boolean).join(" · ");
+  return '<div id="admin-legacy-local-banner" data-module-id="' + escapeHtml(moduleId) + '" role="note" style="margin-bottom:14px;padding:10px 14px;border-radius:11px;border:1px solid ' + C.glassBorder + ';background:rgba(224,146,60,0.10);font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:12px;line-height:1.7;color:' + C.text + ';">' +
+    '<b>وحدة محلية / تجريبية (Legacy · Demo)</b> — ما تعدّله هنا يبقى في ذاكرة المتصفح فقط ولا يصل إلى الخادم الفعلي.' +
+    (names ? ' للإدارة الفعلية استخدم: <span class="admin-legacy-local-replacements">' + names + '</span>.' : '') + '</div>';
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   PACKAGE IDENTITY (Catalog Foundation integration, Phase 6). Wherever an admin screen refers to a Package it now
+   PICKS it from the real catalog instead of typing a free-text id:
+     · Service Pricing  — picks from GET /api/v1/admin/packages and sends the backend-issued `package_uuid`
+                          together with the service code and package code (see the Pricing module above).
+     · Provider Mapping — picks the package in the workspace; service_id/package_id are DERIVED from that catalog
+                          package (read-only in the form). The mapping API has no `package_uuid` field; the database
+                          records the canonical UUID for a (service, package code) pair the catalog knows.
+     · Transactions     — picks from GET /api/v1/catalog (ACTIVE services and packages, readable by any signed-in
+                          identity). The transaction API takes service code + package code; the database records the
+                          canonical UUID. A clearly-labelled "manual technical entry" mode remains for identifiers that are
+                          not in the catalog (legacy / seeded), and is never the default.
+   The SPA never generates a package UUID.
+   ════════════════════════════════════════════════════════════════════ */
+const BackendCatalogApi = {
+  list() { return ApiClient.get("/api/v1/catalog"); },
+};
+/** Fills PACKAGE_BACKEND_DIRECTORY from the admin Package API for the Provider Mapping workspace picker. */
+async function loadProviderMappingCatalog() {
+  const pv = state.admin.modules.providers;
+  pv.catalogLoading = true; pv.catalogError = null;
+  render();
+  const result = await BackendPackageApi.list(null);
+  pv.catalogLoading = false;
+  if (result.status === 401) { handleApiUnauthorized(); return; }
+  if (!result.ok) { pv.catalogError = describeApiError(result); render(); return; }
+  PACKAGE_BACKEND_DIRECTORY.length = 0;
+  PACKAGE_BACKEND_DIRECTORY.push(...result.data.map(mapBackendPackageToDirectoryRecord));
+  render();
+}
+/** The catalog-package <select> that replaces the free-text "Package ID" input of the Provider Mapping workspace. */
+function providerMappingPackagePickerHTML(selectStyle) {
+  const pv = state.admin.modules.providers;
+  if (pv.catalogLoading) return '<div id="provider-mappings-catalog-loading" style="font-size:12px;color:' + C.textFaint + ';">جارٍ تحميل الباقات من الكتالوج…</div>';
+  if (pv.catalogError) return '<div id="provider-mappings-catalog-error" style="font-size:12px;color:' + C.danger + ';">' + escapeHtml(pv.catalogError) + '</div>';
+  if (PACKAGE_BACKEND_DIRECTORY.length === 0) return '<div id="provider-mappings-catalog-empty" style="font-size:12px;color:' + C.textGhost + ';">لا توجد باقات في الكتالوج. أنشئ باقة أولاً من وحدة «الباقات (النظام الفعلي)».</div>';
+  const selected = pv.mappingsWorkspace.packageUuid || "";
+  return '<select id="provider-mappings-package-select" style="' + selectStyle + '">' +
+    '<option value="">— اختر باقة من الكتالوج —</option>' +
+    PACKAGE_BACKEND_DIRECTORY.map((p) => '<option value="' + escapeHtml(p.id) + '"' + (p.id === selected ? " selected" : "") + '>' + escapeHtml(p.serviceCode + " / " + p.code + " — " + p.name + " (" + p.status + ")") + '</option>').join("") +
+    '</select>';
+}
+/** Loads the mappings of the catalog package picked in the workspace (service + code come from the catalog record). */
+function loadProviderMappingsForPickedPackage() {
+  const pv = state.admin.modules.providers;
+  const select = document.getElementById("provider-mappings-package-select");
+  const pkg = select ? findPackageBackendById(select.value) : null;
+  if (!pkg) return;
+  pv.mappingsWorkspace = { providerId: pv.mappingsWorkspace.providerId, packageUuid: pkg.id, packageId: pkg.code, serviceCode: pkg.serviceCode };
+  loadProviderMappingsFromBackend(pkg.code, pkg.serviceCode);
+}
+
+/* ── Real transactions: catalog picker ───────────────────────────── */
+async function loadRealTransactionsCatalog() {
+  const t = rtx();
+  if (!t.catalog) t.catalog = { loading: false, error: null, loaded: false, items: [] };
+  const c = t.catalog;
+  c.loading = true; c.error = null;
+  const result = await BackendCatalogApi.list();
+  c.loading = false;
+  if (result.status === 401) { handleApiUnauthorized(); return; }
+  if (!result.ok) { c.error = describeApiError(result); c.items = []; c.loaded = true; render(); return; }
+  c.items = result.data;
+  c.loaded = true;
+  render();
+}
+/** The (service, package) the catalog pickers currently stand on: the chosen one when valid, else the first available. */
+function rtxEffectiveCatalogSelection(t) {
+  const items = t.catalog ? t.catalog.items : [];
+  const service = items.find((s) => s.service_code === t.form.catalogServiceCode) || items.find((s) => s.packages.length > 0) || items[0] || null;
+  if (!service) return null;
+  const pkg = service.packages.find((p) => p.package_code === t.form.catalogPackageCode) || service.packages[0] || null;
+  return { service, pkg };
+}
+function rtxCatalogPickersHTML(t, f, labelStyle) {
+  const selectStyle = 'width:100%;background:rgba(255,255,255,0.03);border:1px solid ' + C.glassBorder + ';border-radius:11px;padding:10px 14px;color:' + C.text + ';font-family:Cairo,sans-serif;font-size:13px;box-sizing:border-box;';
+  const c = t.catalog || { loading: true, error: null, loaded: false, items: [] };
+  const note = '<div id="rtx-catalog-note" style="margin-top:6px;font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:11px;color:' + C.textFaint + ';">يُختار الصنف من كتالوج الخادم (خدمات وباقات نشطة)، والخادم يحدد النوع والسعر والحجز.</div>';
+  if (c.loading && !c.loaded) return note + '<div id="rtx-catalog-loading" style="' + labelStyle + '">جارٍ تحميل الكتالوج من الخادم…</div>';
+  if (c.error) return note + '<div id="rtx-catalog-error" style="' + labelStyle + 'color:' + C.danger + ';">' + escapeHtml(c.error) + '</div>';
+  const sel = rtxEffectiveCatalogSelection(t);
+  if (!sel || !sel.pkg) return note + '<div id="rtx-catalog-empty" style="' + labelStyle + '">لا توجد خدمات وباقات نشطة في الكتالوج. فعّل خدمة وباقة، أو استخدم الإدخال التقني اليدوي.</div>';
+  return note +
+    '<div style="' + labelStyle + '">الخدمة</div><select id="rtx-catalog-service" style="' + selectStyle + '">' +
+      c.items.filter((s) => s.packages.length > 0).map((s) => '<option value="' + escapeHtml(s.service_code) + '"' + (s.service_code === sel.service.service_code ? " selected" : "") + '>' + escapeHtml(s.service_code + " — " + s.name) + '</option>').join("") + '</select>' +
+    '<div style="' + labelStyle + '">الباقة</div><select id="rtx-catalog-package" style="' + selectStyle + '">' +
+      sel.service.packages.map((p) => '<option value="' + escapeHtml(p.package_code) + '"' + (p.package_code === sel.pkg.package_code ? " selected" : "") + '>' + escapeHtml(p.package_code + " — " + p.name) + '</option>').join("") + '</select>';
+}
+function rtxEntryModeToggleHTML(f) {
+  return '<button id="rtx-entry-mode-toggle" data-mode="' + (f.entryMode === "manual" ? "manual" : "catalog") + '" style="margin-top:10px;padding:6px 12px;border-radius:9px;background:transparent;border:1px solid ' + C.glassBorder + ';color:' + C.textDim + ';cursor:pointer;font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:11px;">' +
+    (f.entryMode === "manual" ? "العودة إلى اختيار الصنف من الكتالوج" : "إدخال تقني يدوي (لمعرّفات غير موجودة في الكتالوج)") + '</button>';
+}
+
+/* ════════════════════════════════════════════════════════════════════
    REAL TRANSACTIONS V1 — create / list / detail / timeline / hold, against
    the real backend ONLY (BackendTransactionApi, BackendWalletApi.getHolds).
    It is NOT the mock purchase flow: nothing here reads or writes the local
@@ -30470,9 +31596,18 @@ function submitRealTransactionForm() {
   const t = rtx();
   const f = t.form;
   if (f.submitting) return;
-  const serviceCode = f.serviceCode.trim();
-  const packageId = f.packageId.trim();
-  if (!serviceCode || !packageId) { f.error = "رمز الخدمة والباقة مطلوبان"; render(); return; }
+  let serviceCode;
+  let packageId;
+  if (f.entryMode === "manual") {
+    serviceCode = f.serviceCode.trim();
+    packageId = f.packageId.trim();
+    if (!serviceCode || !packageId) { f.error = "رمز الخدمة والباقة مطلوبان"; render(); return; }
+  } else {
+    const picked = rtxEffectiveCatalogSelection(t);
+    if (!picked || !picked.pkg) { f.error = "اختر خدمة وباقة من الكتالوج"; render(); return; }
+    serviceCode = picked.service.service_code;
+    packageId = picked.pkg.package_code;
+  }
   let formValues = null;
   if (f.formValuesText.trim()) {
     try { formValues = JSON.parse(f.formValuesText); } catch (e) { f.error = "form_values يجب أن يكون JSON صالحاً"; render(); return; }
@@ -30491,6 +31626,7 @@ function retryRealTransactionSubmission() {
 }
 
 async function loadRealTransactionsList() {
+  loadRealTransactionsCatalog();
   const l = rtx().list;
   l.loading = true; l.error = null;
   render();
@@ -30562,9 +31698,12 @@ function RealTransactionsPanelHTML(theme) {
   const formHTML =
     '<div id="rtx-form" style="padding:14px;border-radius:14px;border:1px solid ' + C.glassBorder + ';background:rgba(255,255,255,0.02);">' +
       '<div style="font-family:Cairo,sans-serif;font-weight:800;font-size:14px;color:' + C.text + ';">إنشاء معاملة (نموذج تقني مؤقت)</div>' +
+      (f.entryMode === "manual" ? (
       '<div id="rtx-temp-note" style="margin-top:6px;font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:11px;color:' + C.textFaint + ';">يتم إدخال رمز الخدمة والباقه حاليًا بشكل مؤقت إلى حين اكتمال كتالوج الخدمات والباقات.</div>' +
       field("rtx-service-code", "serviceCode", "رمز الخدمة (service code)", f.serviceCode, "e.g. svc-manual") +
       field("rtx-package-id", "packageId", "الباقة (package_id)", f.packageId, "e.g. pkg-1") +
+        "") : rtxCatalogPickersHTML(t, f, labelStyle)) +
+      rtxEntryModeToggleHTML(f) +
       field("rtx-target-identifier", "targetIdentifier", "المعرّف المستهدف (اختياري)", f.targetIdentifier, "") +
       '<div style="' + labelStyle + '">form_values (JSON اختياري)</div><textarea id="rtx-form-values" class="rtx-input" data-field="formValuesText" rows="2" style="' + inputStyle + 'resize:vertical;">' + escapeHtml(f.formValuesText) + '</textarea>' +
       errorHTML +
@@ -30676,6 +31815,9 @@ function bindRealTransactionsEvents() {
     input.oninput = (e) => { rtx().form[input.getAttribute("data-field")] = e.target.value; };
   });
   if ($("btn-rtx-submit")) $("btn-rtx-submit").onclick = () => submitRealTransactionForm();
+  if ($("rtx-entry-mode-toggle")) $("rtx-entry-mode-toggle").onclick = () => { const f = rtx().form; f.entryMode = f.entryMode === "manual" ? "catalog" : "manual"; f.error = null; render(); };
+  if ($("rtx-catalog-service")) $("rtx-catalog-service").onchange = (e) => { const f = rtx().form; f.catalogServiceCode = e.target.value; f.catalogPackageCode = ""; render(); };
+  if ($("rtx-catalog-package")) $("rtx-catalog-package").onchange = (e) => { rtx().form.catalogPackageCode = e.target.value; };
   if ($("btn-rtx-retry")) $("btn-rtx-retry").onclick = () => retryRealTransactionSubmission();
   if ($("btn-rtx-list-refresh")) $("btn-rtx-list-refresh").onclick = () => loadRealTransactionsList();
   if ($("btn-rtx-load-more")) $("btn-rtx-load-more").onclick = () => loadMoreRealTransactions();
@@ -38493,6 +39635,10 @@ const ADMIN_MODULE_RENDERERS = {
   providers: AdminProvidersModuleHTML,
   agentsBackend: AdminAgentsBackendModuleHTML,
   servicesBackend: AdminServicesBackendModuleHTML,
+  packagesBackend: AdminPackagesBackendModuleHTML,
+  gatewaysBackend: AdminGatewaysBackendModuleHTML,
+  pricingBackend: AdminPricingBackendModuleHTML,
+  marginFxBackend: AdminMarginFxBackendModuleHTML,
   transactionsBackend: AdminTransactionsBackendModuleHTML,
   operationsBackend: AdminOperationsBackendModuleHTML,
   telecomCompanies: AdminTelecomCompaniesModuleHTML,
@@ -38522,7 +39668,7 @@ function AdminModuleContentHTML(theme) {
       '</div>';
   }
   const renderer = ADMIN_MODULE_RENDERERS[safeModuleId];
-  return renderer ? renderer(theme) : "";
+  return renderer ? adminLegacyBannerHTML(safeModuleId) + renderer(theme) : "";
 }
 
 /* ════════════════════════════════════════════════════════════════════
@@ -39651,6 +40797,19 @@ function attachEvents() {
       // SERVICES ADMIN (real backend) — same discipline.
       if (moduleId === "servicesBackend") {
         loadServicesBackendFromBackend();
+      }
+      // CATALOG FOUNDATION ADMIN — same discipline: every entry refetches from the real backend.
+      if (moduleId === "packagesBackend") {
+        loadPackagesBackendFromBackend();
+      }
+      if (moduleId === "gatewaysBackend") {
+        loadGatewaysBackendFromBackend();
+      }
+      if (moduleId === "pricingBackend") {
+        loadPricingBackendFromBackend();
+      }
+      if (moduleId === "marginFxBackend") {
+        loadMarginFxBackendFromBackend();
       }
       // REAL TRANSACTIONS V1 — fresh entry refetches from the real backend.
       if (moduleId === "transactionsBackend") {
@@ -40949,6 +42108,7 @@ function attachEvents() {
         : pv.mappingForm.open ? pv.mappingForm
         : av.agentForm.open ? av.agentForm
         : sbv.serviceForm.open ? sbv.serviceForm
+        : cfActiveForm() ? cfActiveForm()
         : tc.companyForm.open ? tc.companyForm
         : tc.packageForm.open ? tc.packageForm
         : tc.categoryManager.form.open ? tc.categoryManager.form
@@ -41039,6 +42199,7 @@ function attachEvents() {
       state.admin.modules.providers.mappingForm.open = false;
       state.admin.modules.agentsBackend.agentForm.open = false;
       state.admin.modules.servicesBackend.serviceForm.open = false;
+      cfCloseAllForms();
       state.ownerWorkspace.createNetworkForm.open = false;
       state.admin.modules.operations.groupsView.groupForm.open = false;
       state.admin.modules.operations.routingView.ruleForm.open = false;
@@ -41300,6 +42461,7 @@ function attachEvents() {
   };
   if ($("btn-admin-service-backend-form-save")) $("btn-admin-service-backend-form-save").onclick = () => saveServiceBackendForm();
   if ($("btn-admin-services-backend-retry")) $("btn-admin-services-backend-retry").onclick = () => loadServicesBackendFromBackend();
+  bindCatalogFoundationEvents();
   bindRealTransactionsEvents();
   bindRealOperationsEvents();
 
@@ -41338,14 +42500,10 @@ function attachEvents() {
     openProviderMappingsWorkspace($("btn-admin-provider-mappings").getAttribute("data-provider-id"));
   };
   if ($("btn-admin-provider-mappings-back")) $("btn-admin-provider-mappings-back").onclick = () => closeProviderMappingsWorkspace();
-  if ($("btn-admin-provider-mappings-load")) $("btn-admin-provider-mappings-load").onclick = () => {
-    const input = $("provider-mappings-package-id-input");
-    const packageId = input ? input.value.trim() : "";
-    if (packageId) loadProviderMappingsFromBackend(packageId);
-  };
-  if ($("provider-mappings-package-id-input")) {
-    $("provider-mappings-package-id-input").oninput = (e) => {
-      state.admin.modules.providers.mappingsWorkspace.packageId = e.target.value;
+  if ($("btn-admin-provider-mappings-load")) $("btn-admin-provider-mappings-load").onclick = () => loadProviderMappingsForPickedPackage();
+  if ($("provider-mappings-package-select")) {
+    $("provider-mappings-package-select").onchange = (e) => {
+      state.admin.modules.providers.mappingsWorkspace.packageUuid = e.target.value;
     };
   }
   if ($("btn-admin-provider-mapping-add")) $("btn-admin-provider-mapping-add").onclick = () => openAddProviderMappingForm();
@@ -43725,6 +44883,18 @@ if (!hasAdministratorAccount()) {
   // SERVICES ADMIN (real backend) — same reload discipline.
   if (state.app.currentScreen === "adminPanel" && getSafeActiveAdminModuleId() === "servicesBackend" && state.session.accessToken) {
     loadServicesBackendFromBackend();
+  }
+  if (state.app.currentScreen === "adminPanel" && getSafeActiveAdminModuleId() === "packagesBackend" && state.session.accessToken) {
+    loadPackagesBackendFromBackend();
+  }
+  if (state.app.currentScreen === "adminPanel" && getSafeActiveAdminModuleId() === "gatewaysBackend" && state.session.accessToken) {
+    loadGatewaysBackendFromBackend();
+  }
+  if (state.app.currentScreen === "adminPanel" && getSafeActiveAdminModuleId() === "pricingBackend" && state.session.accessToken) {
+    loadPricingBackendFromBackend();
+  }
+  if (state.app.currentScreen === "adminPanel" && getSafeActiveAdminModuleId() === "marginFxBackend" && state.session.accessToken) {
+    loadMarginFxBackendFromBackend();
   }
   if (state.app.currentScreen === "adminPanel" && getSafeActiveAdminModuleId() === "transactionsBackend" && state.session.accessToken) {
     loadRealTransactionsList();

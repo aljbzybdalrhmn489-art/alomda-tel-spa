@@ -52,7 +52,19 @@ async function openTransactionsModule(page) {
   await expect(page.locator('#rtx-form')).toBeVisible({ timeout: 10_000 });
 }
 
+/**
+ * The create form defaults to picking from the catalog (GET /api/v1/catalog). These scenarios use the seeded
+ * service/packages, which are not catalog packages, so they use the explicit "manual technical entry" mode.
+ */
+async function ensureManualEntry(page) {
+  const toggle = page.locator('#rtx-entry-mode-toggle');
+  await expect(toggle).toBeVisible({ timeout: 10_000 });
+  if ((await toggle.getAttribute('data-mode')) === 'catalog') await toggle.click();
+  await expect(page.locator('#rtx-service-code')).toBeVisible();
+}
+
 async function fillForm(page, { service, pkg, target = '', formValues = '' }) {
+  await ensureManualEntry(page);
   await page.fill('#rtx-service-code', service);
   await page.fill('#rtx-package-id', pkg);
   await page.fill('#rtx-target-identifier', target);
@@ -91,6 +103,7 @@ test.describe('REAL TRANSACTIONS V1 — real backend', () => {
     await loginWithRealBackend(page, ADMIN_LOGIN_IDENTIFIER, ADMIN_PASSWORD);
     await openTransactionsModule(page);
 
+    await ensureManualEntry(page);
     // The temporary technical form is labelled as such, with the required note, and exposes no backend-owned field.
     await expect(page.locator('#rtx-temp-note')).toHaveText('يتم إدخال رمز الخدمة والباقه حاليًا بشكل مؤقت إلى حين اكتمال كتالوج الخدمات والباقات.');
     await expect(page.locator('#rtx-form')).toContainText('نموذج تقني مؤقت');

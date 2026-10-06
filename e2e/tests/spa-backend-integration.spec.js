@@ -1,5 +1,6 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
+const { queryOne } = require('./db-evidence');
 
 /**
  * SPA ↔ Backend Integration V1 — real browser, real backend, real
@@ -131,21 +132,39 @@ test.describe('SPA ↔ Backend Integration V1 — Provider Admin, real backend',
     const pageContentAfterSecret = await page.content();
     expect(pageContentAfterSecret).not.toContain(secretValue);
 
-    // 7) Create a ProviderMapping (§9's own new, additive screen).
+    // 7) Create a ProviderMapping (§9's own new, additive screen). The package is PICKED from the real catalog (Package
+    // identity): service_id/package_id are derived from that catalog package, never typed.
+    const stamp = String(Date.now());
+    const catalogService = 'e2e-map-svc-' + stamp;
+    const packageId = 'e2e-pkg-' + stamp;
+    const catalogPackage = await page.evaluate(async ({ s, p }) => {
+      const svc = await BackendServiceApi.create({ code: s, name: 'E2E Mapping Service', fulfillment_strategy: 'PROVIDER', requires_hold: false });
+      const pkg = await BackendPackageApi.create({ service_code: s, code: p, name: 'E2E Mapping Package' });
+      return svc.ok && pkg.ok ? pkg.data : null;
+    }, { s: catalogService, p: packageId });
+    expect(catalogPackage && catalogPackage.id).toBeTruthy();
     await page.click('#btn-admin-provider-mappings');
-    await expect(page.locator('#provider-mappings-package-id-input')).toBeVisible({ timeout: 10_000 });
-    const packageId = 'e2e-pkg-' + Date.now();
-    await page.fill('#provider-mappings-package-id-input', packageId);
+    await expect(page.locator('#provider-mappings-package-select')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('#provider-mappings-package-id-input')).toHaveCount(0); // no free-text Package ID any more
+    await page.selectOption('#provider-mappings-package-select', catalogPackage.id);
     await page.click('#btn-admin-provider-mappings-load');
     await expect(page.locator('#btn-admin-provider-mapping-add')).toBeVisible({ timeout: 10_000 });
     await page.click('#btn-admin-provider-mapping-add');
-    await page.fill('#pmf-service', 'e2e-service');
+    await expect(page.locator('#pmf-service')).toHaveCount(0);
+    await expect(page.locator('#pmf-service-readonly')).toHaveText(catalogService);
+    await expect(page.locator('#pmf-package-readonly')).toHaveText(packageId);
+    await expect(page.locator('#pmf-package-uuid-readonly')).toHaveText(catalogPackage.id);
     await page.fill('#pmf-gateway', 'gw-e2e');
     await page.fill('#pmf-product-code', 'E2E-PRODUCT-1');
     await page.fill('#pmf-cost', '5.0000');
     await page.fill('#pmf-currency', 'YER');
+    const mappingRequest = page.waitForRequest((req) => req.method() === 'POST' && req.url().endsWith('/api/v1/admin/provider-mappings'));
     await page.click('#btn-admin-provider-mapping-form-save');
+    expect(JSON.parse((await mappingRequest).postData() || '{}')).toMatchObject({ service_id: catalogService, package_id: packageId });
     await expect(page.getByText('E2E-PRODUCT-1')).toBeVisible({ timeout: 10_000 });
+    // The database recorded the canonical catalog UUID for the (service, package code) pair that was picked.
+    const mappingRow = await queryOne('SELECT package_uuid FROM provider_mappings WHERE service_id = $1 AND package_id = $2', [catalogService, packageId]);
+    if (mappingRow !== undefined) expect(mappingRow && mappingRow.package_uuid).toBe(catalogPackage.id);
 
     // No secret anywhere on the final page state.
     expect(await page.content()).not.toContain(secretValue);
