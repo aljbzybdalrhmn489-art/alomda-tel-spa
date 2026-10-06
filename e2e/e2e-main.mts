@@ -101,6 +101,16 @@ async function seed(): Promise<void> {
       if (!assigned.ok) throw new Error('seed assignment: ' + assigned.error.message);
     }
 
+    // Package identity (Owner ratification): a NEW transaction must name a real ACTIVE catalog package of its service, so the two packages
+    // the seeded transactions order are catalog packages too (idempotent: one row per tenant + service + code).
+    for (const packageCode of [E2E_TX_PACKAGE_CHEAP, E2E_TX_PACKAGE_EXPENSIVE]) {
+      await database.query(
+        `INSERT INTO packages (tenant_id, id, service_code, code, name, status, display_order, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $4, 'ACTIVE', 0, $5, $5) ON CONFLICT (tenant_id, service_code, code) DO NOTHING`,
+        [tenantId, String(ids.generate()), E2E_TX_SERVICE_CODE, packageCode, VALID_FROM],
+      );
+    }
+
     // Service pricing: one affordable package, one that can never be afforded (insufficient funds).
     const servicePricing = new PostgresServicePricingRepository({ database, unitOfWork, tenantId });
     for (const [packageId, price] of [[E2E_TX_PACKAGE_CHEAP, '100.0000'], [E2E_TX_PACKAGE_EXPENSIVE, '50000000.0000']] as const) {
