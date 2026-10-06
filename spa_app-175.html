@@ -1006,9 +1006,10 @@ const SYSTEM_TOOLS = [
 const ADMIN_NAV_ITEMS = [
   { id: "dashboard", label: "لوحة التحكم", icon: "LayoutGrid", description: "نظرة عامة على أداء النظام والإحصائيات الرئيسية" },
   { id: "agents", label: "الوكلاء — محلي (تجريبي)", icon: "Users", description: "إدارة حسابات الوكلاء وأرصدتهم وصلاحياتهم" },
-  { id: "customers", label: "العملاء", icon: "UserCog", description: "إدارة سجلات العملاء وربطهم بالوكيل المسؤول عنهم" },
+  { id: "customers", label: "العملاء — محلي (تجريبي)", icon: "UserCog", description: "إدارة سجلات العملاء وربطهم بالوكيل المسؤول عنهم" },
   { id: "providers", label: "المزوّدون", icon: "Building2", description: "إدارة مزوّدي الخدمات وربطهم بالمنتجات" },
   { id: "agentsBackend", label: "الوكلاء (النظام الفعلي)", icon: "Users", description: "إدارة الوكلاء عبر الخادم الفعلي (حساب دخول + رصيد مشتق من دفتر الأستاذ)" },
+  { id: "defaultAgentsBackend", label: "الوكلاء الافتراضيون (النظام الفعلي)", icon: "Users", description: "تعيين الوكيل الافتراضي للعميل أو نقطة البيع عبر الخادم (إدارة فقط): التعيين والتغيير والإلغاء والسجل" },
   { id: "servicesBackend", label: "الخدمات (النظام الفعلي)", icon: "Layers", description: "إدارة كتالوج الخدمات عبر الخادم الفعلي (Service Authority): الكود، استراتيجية التنفيذ، الحجز، والحالة" },
   { id: "packagesBackend", label: "الباقات (النظام الفعلي)", icon: "Layers", description: "إدارة باقات الكتالوج عبر الخادم الفعلي: الخدمة، الكود، الاسم، الحالة، ترتيب العرض" },
   { id: "gatewaysBackend", label: "البوابات (النظام الفعلي)", icon: "Building2", description: "إدارة البوابات عبر الخادم الفعلي: الكود، النوع، العملة الافتراضية، الحالة، البوابة الافتراضية" },
@@ -11617,6 +11618,7 @@ const ADMIN_ACTION_PERMISSION_DIRECTORY = [
   { id: "adminactionperm_agentsbackend_manage", key: "admin.action.agentsBackend.manage", label: "إدارة الوكلاء (النظام الفعلي)", description: "إضافة أو تعديل بيانات وكيل حقيقي على الخادم، أو تفعيله/إيقافه" },
   { id: "adminactionperm_servicesbackend_manage", key: "admin.action.servicesBackend.manage", label: "إدارة الخدمات (النظام الفعلي)", description: "إضافة أو تعديل خدمة على الخادم، أو تفعيلها/إيقافها" },
   { id: "adminactionperm_catalogfoundation_manage", key: "admin.action.catalogFoundation.manage", label: "إدارة أساس الكتالوج (النظام الفعلي)", description: "إدارة الباقات والبوابات والتسعير والهامش وأسعار الصرف على الخادم، وكل تغيير يحسمه الخادم" },
+  { id: "adminactionperm_defaultagentsbackend_manage", key: "admin.action.defaultAgentsBackend.manage", label: "إدارة الوكلاء الافتراضيين (النظام الفعلي)", description: "تعيين الوكيل الافتراضي لعميل أو نقطة بيع أو تغييره أو إلغاؤه على الخادم (الخادم هو الذي يقرر الصلاحية فعلياً)" },
   { id: "adminactionperm_wifi_generatecards", key: "admin.action.wifi.generateCards", label: "توليد بطاقات الواي فاي", description: "إصدار دفعات جديدة من بطاقات الواي فاي" },
   { id: "adminactionperm_commissions_editpricing", key: "admin.action.commissions.editPricing", label: "تعديل التسعير والعمولات", description: "تعديل سياسات العمولة، العملات، قواعد التسعير، البوابات، الفئات التجارية، وربط مزوّدي الاتصالات" },
   { id: "adminactionperm_commissions_settle", key: "admin.action.commissions.settle", label: "تسوية العمولات", description: "تنفيذ تسوية (صرف) عمولات الوكلاء المستحقة" },
@@ -19573,6 +19575,12 @@ const state = {
         loading: false, loadError: null, notice: null, tab: "margin", marginScopeFilter: "", marginServiceFilter: "", fxFromFilter: "", fxToFilter: "",
         marginForm: { cfForm: true, open: false, scope: "GLOBAL", serviceCode: "", fixedMinimumAmount: "", percentageMinimum: "", validFrom: "", submitting: false, error: null },
         fxForm: { cfForm: true, open: false, fromCurrency: "YER", toCurrency: "SAR", rate: "", effectiveFrom: "", source: "", submitting: false, error: null },
+      },
+      // DEFAULT AGENT ADMIN (real backend) — talks ONLY to /api/v1/admin/parties/:id/default-agent* and /admin/agents/:id/assigned-parties.
+      defaultAgentsBackend: {
+        loading: false, loadError: null, notice: null, success: null, tab: "party", agentsAvailable: true, partyIdInput: "", lookup: null, agentFilter: "", assigned: null,
+        assignForm: { cfForm: true, open: false, mode: "assign", partyId: "", agentId: "", validFrom: "", reason: "", submitting: false, error: null },
+        unassignForm: { cfForm: true, open: false, partyId: "", validTo: "", reason: "", submitting: false, error: null },
       },
     },
     // Prepared, not implemented (§2) — the data shape a future Agent
@@ -30441,7 +30449,7 @@ const BackendPackageApi = {
 /* ════════════════════════════════════════════════════════════════════
    CATALOG FOUNDATION ADMIN — shared UI helpers (used by the Packages, Gateways, Pricing and Margin/FX modules).
    ════════════════════════════════════════════════════════════════════ */
-const CF_MODULE_IDS = ["packagesBackend", "gatewaysBackend", "pricingBackend", "marginFxBackend"];
+const CF_MODULE_IDS = ["packagesBackend", "gatewaysBackend", "pricingBackend", "marginFxBackend", "defaultAgentsBackend"];
 const CF_MANAGE_PERMISSION = "admin.action.catalogFoundation.manage";
 /** Each Catalog-Foundation module registers its own event binder here; attachEvents calls them all after every render. */
 const CF_BINDERS = [];
@@ -31392,6 +31400,305 @@ function bindMarginFxBackendEvents() {
 CF_BINDERS.push(bindMarginFxBackendEvents);
 
 /* ════════════════════════════════════════════════════════════════════
+   BACKEND ADMIN HELPERS (Default Agent + Commission Policy modules) — status-aware messages and a result checker.
+   Same contract as cfCheck, but 400/404/409/5xx keep the backend's own text AND say what kind of failure it is
+   (a 403 stays "no permission", a 401 is the app's global sign-out). Nothing here decides a business rule.
+   ════════════════════════════════════════════════════════════════════ */
+function describeAdminApiError(result) {
+  const base = describeApiError(result);
+  if (result.networkError || result.status === 401 || result.status === 403) return base;
+  if (result.status === 400) return "بيانات غير صالحة: " + base;
+  if (result.status === 404) return "غير موجود: " + base;
+  if (result.status === 409) return "تعارض: " + base;
+  if (result.status >= 500) return "حدث خطأ في الخادم. حاول مجدداً لاحقاً.";
+  return base;
+}
+function adminCheck(result, target) {
+  if (result.status === 401) { handleApiUnauthorized(); return null; }
+  if (!result.ok) {
+    if (target) {
+      if (target.cfForm === true) { target.submitting = false; target.error = describeAdminApiError(result); } else { target.notice = describeAdminApiError(result); target.success = null; }
+    }
+    render();
+    return null;
+  }
+  return result;
+}
+function adminSuccessHTML(id, message) {
+  return message ? '<div id="' + id + '" role="status" style="margin-bottom:10px;padding:10px 14px;border-radius:11px;background:rgba(95,191,143,0.12);font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:12px;color:#5FBF8F;">' + escapeHtml(message) + '</div>' : "";
+}
+/** <input type="datetime-local"> value → ISO-8601 (UTC), or null when empty, or undefined when not a valid instant. */
+function adminLocalDateTimeToIso(text) {
+  const t = String(text || "").trim();
+  if (t === "") return null;
+  const d = new Date(t);
+  return Number.isNaN(d.getTime()) ? undefined : d.toISOString();
+}
+const ADMIN_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/* ════════════════════════════════════════════════════════════════════
+   DEFAULT AGENT ADMIN (real backend) — `party-default-agent-admin-routes.ts`, exactly the five routes that exist:
+     GET  /admin/parties/:id/default-agent · GET /admin/parties/:id/default-agent-history
+     POST /admin/parties/:id/default-agent (assign / move) · POST /admin/parties/:id/default-agent/unassign
+     GET  /admin/agents/:id/assigned-parties
+   Administrative only. A customer / POS never chooses or changes its agent (not here, not on a transaction); the backend
+   closes the previous window and opens the next in one step — this screen only SENDS the request and shows what the
+   backend answers. It never computes a window, never reads parent_id / the hierarchy, and never changes an agent by itself:
+   an inactive assigned agent is only WARNED about (new transactions then have no direct agent: NO_COMMISSION /
+   NO_DIRECT_AGENT; old transactions are untouched). There is no backend route that lists customers / POS, so a party is
+   reached by its id, or through the agent it is assigned to.
+   ════════════════════════════════════════════════════════════════════ */
+const BackendDefaultAgentApi = {
+  current(partyId, at) { return ApiClient.get("/api/v1/admin/parties/" + encodeURIComponent(partyId) + "/default-agent" + (at ? "?at=" + encodeURIComponent(at) : "")); },
+  history(partyId) { return ApiClient.get("/api/v1/admin/parties/" + encodeURIComponent(partyId) + "/default-agent-history"); },
+  assign(partyId, payload) { return ApiClient.post("/api/v1/admin/parties/" + encodeURIComponent(partyId) + "/default-agent", payload); },
+  unassign(partyId, payload) { return ApiClient.post("/api/v1/admin/parties/" + encodeURIComponent(partyId) + "/default-agent/unassign", payload); },
+  assignedParties(agentId) { return ApiClient.get("/api/v1/admin/agents/" + encodeURIComponent(agentId) + "/assigned-parties"); },
+};
+const DEFAULT_AGENT_MANAGE_PERMISSION = "admin.action.defaultAgentsBackend.manage";
+function dagAgentInfo(agentId) {
+  return AGENT_BACKEND_DIRECTORY.find((a) => a.id === agentId) || null;
+}
+function dagAgentLabel(agentId) {
+  const a = dagAgentInfo(agentId);
+  return a ? a.displayName + " (" + a.accountNumber + ")" : String(agentId);
+}
+function dagAgentStatusBadge(status) {
+  if (status === "ACTIVE") return { label: "نشط", color: "#5FBF8F" };
+  if (status === "PENDING_VERIFICATION") return { label: "بانتظار التفعيل", color: "#C9A44C" };
+  if (status === "SUSPENDED") return { label: "موقوف", color: "#E0667A" };
+  return { label: escapeHtml(String(status || "غير معروف")), color: "#8A8A8A" };
+}
+/** A history window's state NOW (display only — the backend's own "current" answer is what the Current panel shows). */
+function dagWindowState(w) {
+  const now = Date.now();
+  if (w.valid_to !== null && Date.parse(w.valid_to) <= now) return "expired";
+  if (Date.parse(w.valid_from) > now) return "scheduled";
+  return "current";
+}
+async function loadDefaultAgentsBackendFromBackend() {
+  const m = state.admin.modules.defaultAgentsBackend;
+  m.loading = true; m.loadError = null; m.notice = null; m.success = null;
+  render();
+  const agents = await BackendAgentApi.list();
+  m.loading = false;
+  if (agents.status === 401) { handleApiUnauthorized(); return; }
+  // A 403 on the agents list only means no name / status can be shown: ids are still shown and the backend still decides.
+  m.agentsAvailable = agents.ok;
+  if (agents.ok) {
+    AGENT_BACKEND_DIRECTORY.length = 0;
+    AGENT_BACKEND_DIRECTORY.push(...agents.data.map(mapBackendAgentToDirectoryRecord));
+  }
+  render();
+  if (m.lookup && m.lookup.partyId) lookupDefaultAgentParty(m.lookup.partyId);
+}
+async function lookupDefaultAgentParty(partyId) {
+  const m = state.admin.modules.defaultAgentsBackend;
+  const id = String(partyId || "").trim();
+  if (!ADMIN_UUID_RE.test(id)) { m.lookup = { partyId: id, loading: false, error: "معرّف الطرف يجب أن يكون UUID صالحاً.", current: null, history: [], noCurrent: false }; render(); return; }
+  m.lookup = { partyId: id, loading: true, error: null, current: null, history: [], noCurrent: false };
+  render();
+  // The agents list is refreshed with every lookup so an agent suspended since the last visit is shown (and warned about) with its real status.
+  const [current, history, agents] = await Promise.all([BackendDefaultAgentApi.current(id), BackendDefaultAgentApi.history(id), BackendAgentApi.list()]);
+  if (current.status === 401 || history.status === 401 || agents.status === 401) { handleApiUnauthorized(); return; }
+  m.agentsAvailable = agents.ok;
+  if (agents.ok) { AGENT_BACKEND_DIRECTORY.length = 0; AGENT_BACKEND_DIRECTORY.push(...agents.data.map(mapBackendAgentToDirectoryRecord)); }
+  const l = { partyId: id, loading: false, error: null, current: null, history: [], noCurrent: false };
+  if (!history.ok) l.error = describeAdminApiError(history);
+  else {
+    l.history = history.data;
+    if (current.ok) l.current = current.data;
+    else if (current.status === 404) l.noCurrent = true;
+    else l.error = describeAdminApiError(current);
+  }
+  m.lookup = l;
+  render();
+}
+async function loadDefaultAgentAssignedParties(agentId) {
+  const m = state.admin.modules.defaultAgentsBackend;
+  m.assigned = { loading: true, error: null, items: null, agentId };
+  render();
+  const result = await BackendDefaultAgentApi.assignedParties(agentId);
+  if (result.status === 401) { handleApiUnauthorized(); return; }
+  m.assigned = result.ok ? { loading: false, error: null, items: result.data, agentId } : { loading: false, error: describeAdminApiError(result), items: null, agentId };
+  render();
+}
+function AdminDefaultAgentsBackendModuleHTML(theme) {
+  const m = state.admin.modules.defaultAgentsBackend;
+  const canManage = currentAccountHasAdminActionPermission(DEFAULT_AGENT_MANAGE_PERMISSION);
+  if (m.loading) return cfLoadingHTML("admin-default-agents-loading", "جارٍ تحميل الوكلاء من الخادم…");
+  if (m.loadError) return cfErrorHTML("admin-default-agents-error", m.loadError, "btn-admin-default-agents-retry");
+  const intro = '<div id="dag-intro" style="margin-bottom:12px;font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:11.5px;color:' + C.textFaint + ';">الوكيل الافتراضي للعميل أو نقطة البيع يُعيَّن من الإدارة فقط. بدونه تكون معاملاته الجديدة بلا عمولة (NO_DIRECT_AGENT)، ولا يمكن اختيار وكيل أثناء المعاملة. تغيير الوكيل لا يمسّ المعاملات القديمة.</div>';
+  const tabs = cfTabsHTML("dag-tab", [{ id: "party", label: "بحث بمعرّف الطرف" }, { id: "agent", label: "حسب الوكيل" }], m.tab);
+  const body = m.tab === "agent" ? DefaultAgentsByAgentHTML(m) : DefaultAgentsByPartyHTML(m, canManage);
+  const forms = (m.assignForm.open ? DefaultAgentAssignFormHTML(theme) : "") + (m.unassignForm.open ? DefaultAgentUnassignFormHTML(theme) : "");
+  return adminSuccessHTML("dag-success", m.success) + cfNoticeHTML("dag-notice", m.notice) + intro + tabs + body + forms;
+}
+function DefaultAgentsByPartyHTML(m, canManage) {
+  const inputStyle = 'flex:1;min-width:0;background:rgba(255,255,255,0.03);border:1px solid ' + C.glassBorder + ';border-radius:11px;padding:10px 14px;color:' + C.text + ';font-family:Cairo,sans-serif;font-size:12.5px;direction:ltr;text-align:left;';
+  const search = '<div style="display:flex;gap:8px;margin-bottom:12px;">' +
+    '<input id="dag-party-id" value="' + escapeHtml(m.partyIdInput) + '" placeholder="معرّف العميل / نقطة البيع (UUID)" style="' + inputStyle + '">' +
+    '<button id="btn-dag-lookup" style="padding:10px 16px;border-radius:11px;border:1px solid ' + C.glassBorder + ';background:rgba(255,255,255,0.06);color:' + C.text + ';cursor:pointer;font-family:Cairo,sans-serif;font-weight:700;font-size:12px;">بحث</button></div>';
+  const l = m.lookup;
+  if (!l) return search + cfEmptyHTML("dag-lookup-empty", "أدخل معرّف عميل أو نقطة بيع لعرض وكيله الافتراضي وتاريخ التعيينات.");
+  if (l.loading) return search + cfLoadingHTML("dag-lookup-loading", "جارٍ تحميل بيانات الطرف…");
+  if (l.error) return search + '<div id="dag-lookup-error" data-party-id="' + escapeHtml(l.partyId) + '" style="padding:14px;border-radius:12px;background:' + C.dangerSoft + ';font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:12.5px;color:' + C.danger + ';">' + escapeHtml(l.error) + '</div>';
+
+  let currentHTML;
+  if (l.current) {
+    const c = l.current;
+    const agent = dagAgentInfo(c.agent_id);
+    const badge = agent ? dagAgentStatusBadge(agent.status) : null;
+    const inactive = agent && agent.status !== "ACTIVE";
+    const warning = inactive
+      ? '<div id="dag-inactive-warning" role="alert" style="margin:10px 0;padding:10px 14px;border-radius:11px;background:' + C.dangerSoft + ';font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:12px;color:' + C.danger + ';">تحذير: الوكيل المعيَّن غير نشط (' + escapeHtml(badge.label) + '). المعاملات الجديدة لهذا الطرف لن يكون لها وكيل مباشر (NO_COMMISSION / NO_DIRECT_AGENT) إلى أن تعيِّن وكيلاً نشطاً. المعاملات القديمة لا تتغير، ولا يغيّر هذا الشاشة الوكيل تلقائياً.</div>'
+      : "";
+    const actions = canManage
+      ? '<div style="display:flex;gap:8px;margin-top:10px;"><button id="btn-dag-change" style="flex:1;padding:10px 0;border-radius:10px;cursor:pointer;border:1px solid ' + C.glassBorder + ';background:rgba(255,255,255,0.06);color:' + C.text + ';font-family:Cairo,sans-serif;font-weight:700;font-size:12px;">تغيير الوكيل</button>' +
+        '<button id="btn-dag-unassign" style="flex:1;padding:10px 0;border-radius:10px;cursor:pointer;border:1px solid ' + C.danger + ';background:transparent;color:' + C.danger + ';font-family:Cairo,sans-serif;font-weight:700;font-size:12px;">إلغاء التعيين</button></div>'
+      : "";
+    currentHTML = '<div id="dag-current" data-party-id="' + escapeHtml(l.partyId) + '" data-agent-id="' + escapeHtml(c.agent_id) + '" data-assignment-id="' + escapeHtml(c.id) + '" style="padding:14px;border-radius:14px;border:1px solid ' + C.glassBorder + ';background:rgba(255,255,255,0.02);margin-bottom:12px;">' +
+      '<div style="font-family:Cairo,sans-serif;font-weight:800;font-size:13.5px;color:' + C.text + ';">الوكيل الافتراضي الحالي</div>' +
+      '<div class="dag-current-agent" style="margin-top:6px;font-family:Cairo,sans-serif;font-size:13px;color:' + C.text + ';">' + escapeHtml(dagAgentLabel(c.agent_id)) + (badge ? ' <span class="dag-current-status" data-status="' + escapeHtml(agent.status) + '">' + AdminTableBadgeHTML(badge.label, badge.color) + '</span>' : "") + '</div>' +
+      '<div style="margin-top:4px;direction:ltr;text-align:left;font-size:10px;color:' + C.textGhost + ';">agent ' + escapeHtml(c.agent_id) + '</div>' +
+      '<div class="dag-current-from" style="margin-top:6px;font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:11.5px;color:' + C.textDim + ';">بداية التعيين: ' + cfFormatTimestamp(c.valid_from) + '</div>' +
+      '<div class="dag-current-reason" style="font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:11.5px;color:' + C.textDim + ';">السبب: ' + (c.reason ? escapeHtml(c.reason) : "—") + '</div>' +
+      warning + actions + '</div>';
+  } else {
+    currentHTML = '<div id="dag-none" data-party-id="' + escapeHtml(l.partyId) + '" style="padding:14px;border-radius:14px;border:1px solid ' + C.glassBorder + ';background:rgba(255,255,255,0.02);margin-bottom:12px;">' +
+      '<div style="font-family:Cairo,sans-serif;font-weight:800;font-size:13.5px;color:' + C.text + ';">لا يوجد وكيل افتراضي حالياً</div>' +
+      '<div style="margin-top:6px;font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:11.5px;color:' + C.textDim + ';">المعاملات الجديدة لهذا الطرف بلا عمولة (NO_COMMISSION / NO_DIRECT_AGENT).</div>' +
+      (canManage ? '<button id="btn-dag-assign" style="margin-top:10px;width:100%;padding:10px 0;border-radius:10px;cursor:pointer;border:1px solid ' + C.glassBorder + ';background:rgba(255,255,255,0.06);color:' + C.text + ';font-family:Cairo,sans-serif;font-weight:700;font-size:12px;">تعيين وكيل</button>' : "") + '</div>';
+  }
+  const stateLabel = { current: ["حالي", "#5FBF8F"], expired: ["منتهٍ", "#8A8A8A"], scheduled: ["مجدول", "#C9A44C"] };
+  const rows = l.history.map((w) => {
+    const st = dagWindowState(w);
+    return '<div class="dag-history-row" data-assignment-id="' + escapeHtml(w.id) + '" data-agent-id="' + escapeHtml(w.agent_id) + '" data-state="' + st + '" style="padding:10px 0;border-bottom:1px solid ' + C.glassBorder + ';font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:11.5px;color:' + C.textDim + ';">' +
+      '<div style="display:flex;justify-content:space-between;gap:8px;"><span class="dag-history-agent" style="font-family:Cairo,sans-serif;font-weight:700;color:' + C.text + ';">' + escapeHtml(dagAgentLabel(w.agent_id)) + '</span>' + AdminTableBadgeHTML(stateLabel[st][0], stateLabel[st][1]) + '</div>' +
+      '<div>من <span class="dag-history-from">' + cfFormatTimestamp(w.valid_from) + '</span> إلى <span class="dag-history-to">' + (w.valid_to ? cfFormatTimestamp(w.valid_to) : "—") + '</span></div>' +
+      '<div>السبب: <span class="dag-history-reason">' + (w.reason ? escapeHtml(w.reason) : "—") + '</span> · أُنشئ ' + cfFormatTimestamp(w.created_at) + (w.created_by ? ' · بواسطة <span class="dag-history-by" style="direction:ltr;unicode-bidi:embed;">' + escapeHtml(w.created_by) + '</span>' : "") + '</div></div>';
+  }).join("");
+  const historyHTML = '<div style="font-family:Cairo,sans-serif;font-weight:800;font-size:13px;color:' + C.text + ';margin-bottom:4px;">سجل التعيينات (لا يُعدَّل)</div>' +
+    '<div id="dag-history">' + (rows || cfEmptyHTML("dag-history-empty", "لا توجد تعيينات سابقة لهذا الطرف.")) + '</div>';
+  return search + '<div id="dag-lookup" data-party-id="' + escapeHtml(l.partyId) + '">' + currentHTML + historyHTML + '</div>';
+}
+function DefaultAgentsByAgentHTML(m) {
+  const options = [{ value: "", label: "— اختر وكيلاً —" }].concat(AGENT_BACKEND_DIRECTORY.map((a) => ({ value: a.id, label: a.displayName + " (" + a.accountNumber + ") — " + a.status })));
+  const select = m.agentsAvailable
+    ? '<select id="dag-agent-select" style="width:100%;background:rgba(255,255,255,0.03);border:1px solid ' + C.glassBorder + ';border-radius:11px;padding:10px 14px;color:' + C.text + ';font-family:Cairo,sans-serif;font-size:13px;margin-bottom:12px;">' +
+      options.map((o) => '<option value="' + escapeHtml(o.value) + '"' + (o.value === m.agentFilter ? " selected" : "") + '>' + escapeHtml(o.label) + '</option>').join("") + '</select>'
+    : cfNoticeHTML("dag-agents-unavailable", "قائمة الوكلاء غير متاحة لحسابك (لا صلاحية).");
+  const a = m.assigned;
+  let body = cfEmptyHTML("dag-agent-empty", "اختر وكيلاً لعرض العملاء ونقاط البيع المعيَّنين له حالياً.");
+  if (a && a.loading) body = cfLoadingHTML("dag-assigned-loading", "جارٍ تحميل الأطراف المعيَّنة…");
+  else if (a && a.error) body = '<div id="dag-assigned-error" style="padding:14px;border-radius:12px;background:' + C.dangerSoft + ';font-size:12.5px;color:' + C.danger + ';">' + escapeHtml(a.error) + '</div>';
+  else if (a && a.items) {
+    body = a.items.length === 0 ? cfEmptyHTML("dag-assigned-empty", "لا يوجد أي طرف معيَّن لهذا الوكيل حالياً.")
+      : '<div id="dag-assigned-list">' + a.items.map((w) => '<div class="dag-assigned-row" data-party-id="' + escapeHtml(w.party_id) + '" data-assignment-id="' + escapeHtml(w.id) + '" style="display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid ' + C.glassBorder + ';">' +
+        '<div style="flex:1;min-width:0;"><div class="dag-assigned-party" style="direction:ltr;text-align:left;font-size:11.5px;color:' + C.text + ';word-break:break-all;">' + escapeHtml(w.party_id) + '</div>' +
+        '<div style="font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:11px;color:' + C.textDim + ';">منذ ' + cfFormatTimestamp(w.valid_from) + (w.reason ? ' · ' + escapeHtml(w.reason) : "") + '</div></div>' +
+        cfSmallButtonHTML("dag-open-party", 'data-party-id="' + escapeHtml(w.party_id) + '"', "فتح") + '</div>').join("") + '</div>';
+  }
+  return select + body;
+}
+function openDefaultAgentAssignForm(mode) {
+  const m = state.admin.modules.defaultAgentsBackend;
+  m.assignForm = { cfForm: true, open: true, mode, partyId: m.lookup.partyId, agentId: "", validFrom: "", reason: "", submitting: false, error: null };
+  render();
+}
+function DefaultAgentAssignFormHTML(theme) {
+  const m = state.admin.modules.defaultAgentsBackend;
+  const f = m.assignForm;
+  const currentAgentId = m.lookup && m.lookup.current ? m.lookup.current.agent_id : null;
+  let fieldsHTML = cfReadonlyFieldHTML("dag-form-party", "العميل / نقطة البيع", f.partyId);
+  if (f.mode === "change" && currentAgentId) fieldsHTML += cfReadonlyFieldHTML("dag-form-current-agent", "الوكيل الحالي", dagAgentLabel(currentAgentId));
+  if (m.agentsAvailable) {
+    // Only ACTIVE agents are offered (the backend refuses any other); the backend stays the validator.
+    const choices = AGENT_BACKEND_DIRECTORY.filter((a) => a.status === "ACTIVE" && a.id !== currentAgentId).map((a) => ({ value: a.id, label: a.displayName + " (" + a.accountNumber + ")" }));
+    fieldsHTML += cfField("dag-form-agent", "agentId", f.mode === "change" ? "الوكيل الجديد" : "الوكيل", "select", f.agentId, true, [{ value: "", label: "— اختر وكيلاً نشطاً —" }].concat(choices));
+  } else {
+    fieldsHTML += cfField("dag-form-agent", "agentId", "معرّف الوكيل (UUID)", "text", f.agentId, true);
+  }
+  fieldsHTML += cfField("dag-form-valid-from", "validFrom", "بداية السريان (اختياري — الآن إن تُرك فارغاً؛ يمكن تحديد وقت مستقبلي)", "datetime-local", f.validFrom, false);
+  fieldsHTML += cfField("dag-form-reason", "reason", "السبب (اختياري)", "text", f.reason, false);
+  return cfFormDialogHTML("dag-assign-overlay", f.mode === "change" ? "تغيير الوكيل الافتراضي" : "تعيين وكيل افتراضي", f, "dag-assign-error", fieldsHTML, "btn-dag-assign-cancel", "btn-dag-assign-save", theme);
+}
+async function saveDefaultAgentAssignForm() {
+  const m = state.admin.modules.defaultAgentsBackend;
+  const f = m.assignForm;
+  if (f.submitting) return;
+  if (!currentAccountHasAdminActionPermission(DEFAULT_AGENT_MANAGE_PERMISSION)) { f.error = "لا تملك صلاحية تنفيذ هذا الإجراء"; render(); return; }
+  const agentId = String(f.agentId || "").trim();
+  if (!agentId) { f.error = "اختر الوكيل"; render(); return; }
+  if (!ADMIN_UUID_RE.test(agentId)) { f.error = "معرّف الوكيل يجب أن يكون UUID صالحاً"; render(); return; }
+  const validFrom = adminLocalDateTimeToIso(f.validFrom);
+  if (validFrom === undefined) { f.error = "بداية السريان ليست تاريخاً صالحاً"; render(); return; }
+  const payload = { agent_id: agentId };
+  if (validFrom !== null) payload.valid_from = validFrom;
+  if (String(f.reason || "").trim() !== "") payload.reason = String(f.reason).trim();
+  f.submitting = true; f.error = null;
+  render();
+  const result = await BackendDefaultAgentApi.assign(f.partyId, payload);
+  if (!adminCheck(result, f)) return;
+  f.open = false;
+  m.success = f.mode === "change" ? "تم تغيير الوكيل الافتراضي (أُغلقت الفترة السابقة وفُتحت الجديدة من الخادم)." : "تم تعيين الوكيل الافتراضي.";
+  await lookupDefaultAgentParty(f.partyId);
+}
+function openDefaultAgentUnassignForm() {
+  const m = state.admin.modules.defaultAgentsBackend;
+  m.unassignForm = { cfForm: true, open: true, partyId: m.lookup.partyId, validTo: "", reason: "", submitting: false, error: null };
+  render();
+}
+function DefaultAgentUnassignFormHTML(theme) {
+  const m = state.admin.modules.defaultAgentsBackend;
+  const f = m.unassignForm;
+  const confirm = '<div id="dag-unassign-confirm" style="margin-bottom:14px;padding:10px 14px;border-radius:11px;background:' + C.dangerSoft + ';font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:12px;color:' + C.danger + ';">سيُغلق التعيين الحالي فقط (يبقى في السجل ولا يُحذف). بعده يصبح هذا الطرف بلا وكيل مباشر، فتكون معاملاته الجديدة بلا عمولة. هل أنت متأكد؟</div>';
+  let fieldsHTML = confirm + cfReadonlyFieldHTML("dag-unassign-party", "العميل / نقطة البيع", f.partyId);
+  fieldsHTML += cfField("dag-unassign-valid-to", "validTo", "نهاية التعيين (اختياري — الآن إن تُرك فارغاً)", "datetime-local", f.validTo, false);
+  fieldsHTML += cfField("dag-unassign-reason", "reason", "السبب (اختياري)", "text", f.reason, false);
+  return cfFormDialogHTML("dag-unassign-overlay", "إلغاء تعيين الوكيل الافتراضي", f, "dag-unassign-error", fieldsHTML, "btn-dag-unassign-cancel", "btn-dag-unassign-save", theme);
+}
+async function saveDefaultAgentUnassignForm() {
+  const m = state.admin.modules.defaultAgentsBackend;
+  const f = m.unassignForm;
+  if (f.submitting) return;
+  if (!currentAccountHasAdminActionPermission(DEFAULT_AGENT_MANAGE_PERMISSION)) { f.error = "لا تملك صلاحية تنفيذ هذا الإجراء"; render(); return; }
+  const validTo = adminLocalDateTimeToIso(f.validTo);
+  if (validTo === undefined) { f.error = "نهاية التعيين ليست تاريخاً صالحاً"; render(); return; }
+  const payload = {};
+  if (validTo !== null) payload.valid_to = validTo;
+  if (String(f.reason || "").trim() !== "") payload.reason = String(f.reason).trim();
+  f.submitting = true; f.error = null;
+  render();
+  const result = await BackendDefaultAgentApi.unassign(f.partyId, payload);
+  if (!adminCheck(result, f)) return;
+  f.open = false;
+  m.success = "تم إلغاء التعيين (بقي السجل محفوظاً).";
+  await lookupDefaultAgentParty(f.partyId);
+}
+function bindDefaultAgentsBackendEvents() {
+  const $ = (id) => document.getElementById(id);
+  const m = state.admin.modules.defaultAgentsBackend;
+  if ($("btn-admin-default-agents-retry")) $("btn-admin-default-agents-retry").onclick = () => loadDefaultAgentsBackendFromBackend();
+  document.querySelectorAll(".dag-tab").forEach((btn) => { btn.onclick = () => { m.tab = btn.getAttribute("data-tab-id"); m.notice = null; m.success = null; render(); }; });
+  if ($("dag-party-id")) {
+    $("dag-party-id").oninput = (e) => { m.partyIdInput = e.target.value; };
+    $("dag-party-id").onkeydown = (e) => { if (e.key === "Enter") { m.success = null; m.notice = null; lookupDefaultAgentParty(m.partyIdInput); } };
+  }
+  if ($("btn-dag-lookup")) $("btn-dag-lookup").onclick = () => { m.success = null; m.notice = null; lookupDefaultAgentParty(m.partyIdInput); };
+  if ($("btn-dag-assign")) $("btn-dag-assign").onclick = () => openDefaultAgentAssignForm("assign");
+  if ($("btn-dag-change")) $("btn-dag-change").onclick = () => openDefaultAgentAssignForm("change");
+  if ($("btn-dag-unassign")) $("btn-dag-unassign").onclick = () => openDefaultAgentUnassignForm();
+  if ($("btn-dag-assign-cancel")) $("btn-dag-assign-cancel").onclick = () => { m.assignForm.open = false; render(); };
+  if ($("btn-dag-assign-save")) $("btn-dag-assign-save").onclick = () => saveDefaultAgentAssignForm();
+  if ($("btn-dag-unassign-cancel")) $("btn-dag-unassign-cancel").onclick = () => { m.unassignForm.open = false; render(); };
+  if ($("btn-dag-unassign-save")) $("btn-dag-unassign-save").onclick = () => saveDefaultAgentUnassignForm();
+  if ($("dag-agent-select")) $("dag-agent-select").onchange = (e) => { m.agentFilter = e.target.value; if (m.agentFilter) loadDefaultAgentAssignedParties(m.agentFilter); else { m.assigned = null; render(); } };
+  document.querySelectorAll(".dag-open-party").forEach((btn) => { btn.onclick = () => { m.tab = "party"; m.partyIdInput = btn.getAttribute("data-party-id"); m.success = null; m.notice = null; lookupDefaultAgentParty(m.partyIdInput); }; });
+}
+CF_BINDERS.push(bindDefaultAgentsBackendEvents);
+
+/* ════════════════════════════════════════════════════════════════════
    LEGACY / DEMO LOCAL ADMIN MODULES — separation from the real-backend modules.
    Each module below still works on its own in-memory arrays, because other (agent / customer / employee) screens read
    those same arrays and nothing here deletes legacy code. What changes is honesty: the module is labelled local/demo
@@ -31408,6 +31715,7 @@ const ADMIN_LEGACY_LOCAL_MODULES = {
   agents: ["agentsBackend"],
   operations: ["operationsBackend"],
   commissions: ["pricingBackend", "gatewaysBackend", "marginFxBackend"],
+  customers: ["defaultAgentsBackend"],
   games: ["packagesBackend"],
   telecomCompanies: ["packagesBackend"],
 };
@@ -39621,6 +39929,7 @@ const ADMIN_MODULE_RENDERERS = {
   gatewaysBackend: AdminGatewaysBackendModuleHTML,
   pricingBackend: AdminPricingBackendModuleHTML,
   marginFxBackend: AdminMarginFxBackendModuleHTML,
+  defaultAgentsBackend: AdminDefaultAgentsBackendModuleHTML,
   transactionsBackend: AdminTransactionsBackendModuleHTML,
   operationsBackend: AdminOperationsBackendModuleHTML,
   telecomCompanies: AdminTelecomCompaniesModuleHTML,
@@ -40792,6 +41101,9 @@ function attachEvents() {
       }
       if (moduleId === "marginFxBackend") {
         loadMarginFxBackendFromBackend();
+      }
+      if (moduleId === "defaultAgentsBackend") {
+        loadDefaultAgentsBackendFromBackend();
       }
       // REAL TRANSACTIONS V1 — fresh entry refetches from the real backend.
       if (moduleId === "transactionsBackend") {
@@ -44877,6 +45189,9 @@ if (!hasAdministratorAccount()) {
   }
   if (state.app.currentScreen === "adminPanel" && getSafeActiveAdminModuleId() === "marginFxBackend" && state.session.accessToken) {
     loadMarginFxBackendFromBackend();
+  }
+  if (state.app.currentScreen === "adminPanel" && getSafeActiveAdminModuleId() === "defaultAgentsBackend" && state.session.accessToken) {
+    loadDefaultAgentsBackendFromBackend();
   }
   if (state.app.currentScreen === "adminPanel" && getSafeActiveAdminModuleId() === "transactionsBackend" && state.session.accessToken) {
     loadRealTransactionsList();
