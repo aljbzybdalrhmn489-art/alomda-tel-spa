@@ -1015,6 +1015,7 @@ const ADMIN_NAV_ITEMS = [
   { id: "gatewaysBackend", label: "البوابات (النظام الفعلي)", icon: "Building2", description: "إدارة البوابات عبر الخادم الفعلي: الكود، النوع، العملة الافتراضية، الحالة، البوابة الافتراضية" },
   { id: "pricingBackend", label: "التسعير (النظام الفعلي)", icon: "Percent", description: "إدارة التسعير عبر الخادم الفعلي: مجموعات التسعير، تعيين الأطراف، وأسعار الخدمات (إصدارات)" },
   { id: "marginFxBackend", label: "الهامش وأسعار الصرف (النظام الفعلي)", icon: "Receipt", description: "إدارة سياسات الهامش (إصدارات) وأسعار الصرف (سجل يُلحق به) عبر الخادم الفعلي" },
+  { id: "commissionPoliciesBackend", label: "سياسات العمولة (النظام الفعلي)", icon: "Percent", description: "إدارة سياسات عمولة الوكيل المباشر عبر الخادم: النطاق، التعيين، الصيغة، التمويل، والإصدارات" },
   { id: "transactionsBackend", label: "المعاملات (النظام الفعلي)", icon: "Receipt", description: "إنشاء ومتابعة معاملات حقيقية عبر الخادم: الحالة، الجدول الزمني، وحجز المبلغ" },
   { id: "operationsBackend", label: "العمليات — النظام الفعلي", icon: "Receipt", description: "طلبات الخدمة والموظفون والمجموعات عبر الخادم (التوزيع والحالة يحددهما الخادم)" },
   { id: "telecomCompanies", label: "شركات الاتصالات — محلي (تجريبي)", icon: "RadioTower", description: "إدارة شركات الاتصالات وباقاتها ومنتجاتها" },
@@ -11619,6 +11620,7 @@ const ADMIN_ACTION_PERMISSION_DIRECTORY = [
   { id: "adminactionperm_servicesbackend_manage", key: "admin.action.servicesBackend.manage", label: "إدارة الخدمات (النظام الفعلي)", description: "إضافة أو تعديل خدمة على الخادم، أو تفعيلها/إيقافها" },
   { id: "adminactionperm_catalogfoundation_manage", key: "admin.action.catalogFoundation.manage", label: "إدارة أساس الكتالوج (النظام الفعلي)", description: "إدارة الباقات والبوابات والتسعير والهامش وأسعار الصرف على الخادم، وكل تغيير يحسمه الخادم" },
   { id: "adminactionperm_defaultagentsbackend_manage", key: "admin.action.defaultAgentsBackend.manage", label: "إدارة الوكلاء الافتراضيين (النظام الفعلي)", description: "تعيين الوكيل الافتراضي لعميل أو نقطة بيع أو تغييره أو إلغاؤه على الخادم (الخادم هو الذي يقرر الصلاحية فعلياً)" },
+  { id: "adminactionperm_commissionpoliciesbackend_manage", key: "admin.action.commissionPoliciesBackend.manage", label: "إدارة سياسات العمولة (النظام الفعلي)", description: "إنشاء سياسة عمولة أو إصدار جديد منها على الخادم (الخادم هو الذي يقرر الصلاحية فعلياً)" },
   { id: "adminactionperm_wifi_generatecards", key: "admin.action.wifi.generateCards", label: "توليد بطاقات الواي فاي", description: "إصدار دفعات جديدة من بطاقات الواي فاي" },
   { id: "adminactionperm_commissions_editpricing", key: "admin.action.commissions.editPricing", label: "تعديل التسعير والعمولات", description: "تعديل سياسات العمولة، العملات، قواعد التسعير، البوابات، الفئات التجارية، وربط مزوّدي الاتصالات" },
   { id: "adminactionperm_commissions_settle", key: "admin.action.commissions.settle", label: "تسوية العمولات", description: "تنفيذ تسوية (صرف) عمولات الوكلاء المستحقة" },
@@ -19581,6 +19583,11 @@ const state = {
         loading: false, loadError: null, notice: null, success: null, tab: "party", agentsAvailable: true, partyIdInput: "", lookup: null, agentFilter: "", assigned: null,
         assignForm: { cfForm: true, open: false, mode: "assign", partyId: "", agentId: "", validFrom: "", reason: "", submitting: false, error: null },
         unassignForm: { cfForm: true, open: false, partyId: "", validTo: "", reason: "", submitting: false, error: null },
+      },
+      // COMMISSION POLICY ADMIN (real backend) — talks ONLY to /api/v1/admin/commission-policies (+ read-only pickers).
+      commissionPoliciesBackend: {
+        loading: false, loadError: null, notice: null, success: null, policyFilter: "", selected: null, agentsAvailable: true, lookups: null,
+        policyForm: { cfForm: true, open: false, mode: "add", policyId: null, version: null, serviceCode: "", packageUuid: "", providerId: "", assignmentType: "GLOBAL", assignmentTargetId: "", basisType: "CUSTOMER_PRICE", formulaType: "PERCENTAGE", rate: "", amount: "", paramsJson: "", fundingSource: "COMPANY_SUPPORTED", allowsRetention: "false", currencyCode: "YER", validFrom: "", validTo: "", submitting: false, error: null },
       },
     },
     // Prepared, not implemented (§2) — the data shape a future Agent
@@ -30449,7 +30456,7 @@ const BackendPackageApi = {
 /* ════════════════════════════════════════════════════════════════════
    CATALOG FOUNDATION ADMIN — shared UI helpers (used by the Packages, Gateways, Pricing and Margin/FX modules).
    ════════════════════════════════════════════════════════════════════ */
-const CF_MODULE_IDS = ["packagesBackend", "gatewaysBackend", "pricingBackend", "marginFxBackend", "defaultAgentsBackend"];
+const CF_MODULE_IDS = ["packagesBackend", "gatewaysBackend", "pricingBackend", "marginFxBackend", "defaultAgentsBackend", "commissionPoliciesBackend"];
 const CF_MANAGE_PERMISSION = "admin.action.catalogFoundation.manage";
 /** Each Catalog-Foundation module registers its own event binder here; attachEvents calls them all after every render. */
 const CF_BINDERS = [];
@@ -31699,6 +31706,274 @@ function bindDefaultAgentsBackendEvents() {
 CF_BINDERS.push(bindDefaultAgentsBackendEvents);
 
 /* ════════════════════════════════════════════════════════════════════
+   COMMISSION POLICY ADMIN (real backend) — `commission-policy-admin-routes.ts`, exactly the four routes that exist:
+     POST /admin/commission-policies (create version 1) · GET /admin/commission-policies (every version)
+     GET /admin/commission-policies/:id (latest version) · PATCH /admin/commission-policies/:id (the NEXT version)
+   Plus read-only pickers: /admin/agent-groups, /admin/agent-tiers, /admin/agents, /admin/services, /admin/packages, /admin/providers.
+   Versions are immutable history: a change is always a NEW version (PATCH); scope, assignment and currency never change,
+   and there is no delete / activate. Commission V1 is DIRECT AGENT ONLY: the single recipient (depth 0, weight 1.0) is
+   generated here and no upline / sponsor / customer / POS commission exists in this screen. An AGENT target can only be
+   picked from the real agents, an AGENT_GROUP from the real groups, an AGENT_TIER from the four tiers — the backend stays
+   the validator (a 400 is shown with its own message). The SPA calculates nothing: no amount, no group / tier / policy
+   selection.
+   ════════════════════════════════════════════════════════════════════ */
+const BackendCommissionPolicyApi = {
+  list(policyId) { return ApiClient.get("/api/v1/admin/commission-policies" + (policyId ? "?policy_id=" + encodeURIComponent(policyId) : "")); },
+  get(id) { return ApiClient.get("/api/v1/admin/commission-policies/" + encodeURIComponent(id)); },
+  create(payload) { return ApiClient.post("/api/v1/admin/commission-policies", payload); },
+  update(id, patch) { return ApiClient.patch("/api/v1/admin/commission-policies/" + encodeURIComponent(id), patch); },
+};
+const BackendAgentGroupApi = { list() { return ApiClient.get("/api/v1/admin/agent-groups"); } };
+const BackendAgentTierApi = { list() { return ApiClient.get("/api/v1/admin/agent-tiers"); } };
+const COMMISSION_POLICY_MANAGE_PERMISSION = "admin.action.commissionPoliciesBackend.manage";
+const COMMISSION_POLICY_BACKEND_DIRECTORY = [];
+const COMMISSION_AGENT_GROUP_DIRECTORY = [];
+const COMMISSION_AGENT_TIER_DIRECTORY = [];
+const COMMISSION_PROVIDER_DIRECTORY = [];
+const CPB_ASSIGNMENT_TYPES = [
+  { value: "GLOBAL", label: "عام (GLOBAL)" }, { value: "AGENT", label: "وكيل محدد (AGENT)" },
+  { value: "AGENT_GROUP", label: "مجموعة وكلاء (AGENT_GROUP)" }, { value: "AGENT_TIER", label: "فئة وكيل (AGENT_TIER)" },
+];
+const CPB_BASIS_TYPES = [{ value: "CUSTOMER_PRICE", label: "سعر العميل (CUSTOMER_PRICE)" }, { value: "PROVIDER_COST", label: "تكلفة المزوّد (PROVIDER_COST)" }];
+const CPB_FORMULA_TYPES = [
+  { value: "PERCENTAGE", label: "نسبة (PERCENTAGE)" }, { value: "FIXED_AMOUNT", label: "مبلغ ثابت (FIXED_AMOUNT)" },
+  { value: "HYBRID", label: "مختلطة (HYBRID — JSON)" }, { value: "SLAB", label: "شرائح (SLAB — JSON)" },
+];
+const CPB_FUNDING_SOURCES = [
+  { value: "COMPANY_SUPPORTED", label: "تتحملها الشركة (COMPANY_SUPPORTED)" }, { value: "PROVIDER_SUPPORTED", label: "يتحملها المزوّد (PROVIDER_SUPPORTED)" }, { value: "MIXED", label: "مختلط (MIXED)" },
+];
+/** Commission V1: the only recipient is the direct agent (depth 0, the whole pool). Generated, never typed. */
+const CPB_V1_DISTRIBUTION_MODEL = "SIMULTANEOUS_WEIGHTED_SPLIT";
+const CPB_V1_WEIGHT_PARAMETERS = { recipients: [{ hierarchyDepth: 0, weight: "1.0" }] };
+function cpbAssignmentTargetLabel(type, targetId) {
+  if (type === "GLOBAL" || !targetId) return "—";
+  if (type === "AGENT") return dagAgentLabel(targetId);
+  if (type === "AGENT_GROUP") { const g = COMMISSION_AGENT_GROUP_DIRECTORY.find((x) => x.id === targetId); return g ? g.code + " — " + g.name : String(targetId); }
+  if (type === "AGENT_TIER") { const t = COMMISSION_AGENT_TIER_DIRECTORY.find((x) => x.tier_code === targetId); return t ? t.tier_code + " — " + t.name : String(targetId); }
+  return String(targetId);
+}
+function cpbWindowState(p) {
+  const now = Date.now();
+  if (p.valid_to !== null && Date.parse(p.valid_to) <= now) return ["منتهية", "#8A8A8A", "ended"];
+  if (Date.parse(p.valid_from) > now) return ["مجدولة", "#C9A44C", "scheduled"];
+  return ["سارية", "#5FBF8F", "active"];
+}
+async function loadCommissionPoliciesBackendFromBackend() {
+  const m = state.admin.modules.commissionPoliciesBackend;
+  m.loading = true; m.loadError = null; m.notice = null; m.success = null;
+  render();
+  const [policies, services, packages, agents, groups, tiers, providers] = await Promise.all([
+    BackendCommissionPolicyApi.list(m.policyFilter || null), BackendServiceApi.list(), BackendPackageApi.list(null), BackendAgentApi.list(),
+    BackendAgentGroupApi.list(), BackendAgentTierApi.list(), BackendProviderApi.list(),
+  ]);
+  m.loading = false;
+  if ([policies, services, packages, agents, groups, tiers, providers].some((r) => r.status === 401)) { handleApiUnauthorized(); return; }
+  if (!policies.ok) { m.loadError = describeAdminApiError(policies); render(); return; }
+  COMMISSION_POLICY_BACKEND_DIRECTORY.length = 0;
+  COMMISSION_POLICY_BACKEND_DIRECTORY.push(...policies.data);
+  // Auxiliary read-only pickers: a 403 on one of them only empties that picker (and says so); the backend still validates every write.
+  cfFillServicesMirror(services);
+  if (packages.ok) { PACKAGE_BACKEND_DIRECTORY.length = 0; PACKAGE_BACKEND_DIRECTORY.push(...packages.data.map(mapBackendPackageToDirectoryRecord)); }
+  m.agentsAvailable = agents.ok;
+  if (agents.ok) { AGENT_BACKEND_DIRECTORY.length = 0; AGENT_BACKEND_DIRECTORY.push(...agents.data.map(mapBackendAgentToDirectoryRecord)); }
+  COMMISSION_AGENT_GROUP_DIRECTORY.length = 0; if (groups.ok) COMMISSION_AGENT_GROUP_DIRECTORY.push(...groups.data);
+  COMMISSION_AGENT_TIER_DIRECTORY.length = 0; if (tiers.ok) COMMISSION_AGENT_TIER_DIRECTORY.push(...tiers.data);
+  COMMISSION_PROVIDER_DIRECTORY.length = 0; if (providers.ok) COMMISSION_PROVIDER_DIRECTORY.push(...providers.data);
+  m.lookups = { services: services.ok, packages: packages.ok, agents: agents.ok, groups: groups.ok, tiers: tiers.ok, providers: providers.ok };
+  render();
+}
+function cpbLatestVersions() {
+  const latest = new Map();
+  for (const p of COMMISSION_POLICY_BACKEND_DIRECTORY) { const cur = latest.get(p.policy_id); if (!cur || p.version > cur.version) latest.set(p.policy_id, p); }
+  return latest;
+}
+function AdminCommissionPoliciesBackendModuleHTML(theme) {
+  const m = state.admin.modules.commissionPoliciesBackend;
+  const canManage = currentAccountHasAdminActionPermission(COMMISSION_POLICY_MANAGE_PERMISSION);
+  if (m.loading) return cfLoadingHTML("admin-commission-policies-loading", "جارٍ تحميل سياسات العمولة من الخادم…");
+  if (m.loadError) return cfErrorHTML("admin-commission-policies-error", m.loadError, "btn-admin-commission-policies-retry");
+  const intro = '<div id="cpb-intro" style="margin-bottom:12px;font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:11.5px;color:' + C.textFaint + ';">عمولة الإصدار الأول (V1) للوكيل المباشر فقط: لا عمولة لوكيل أعلى ولا للعميل أو نقطة البيع. الإصدارات القديمة لا تُعدَّل أبداً — أي تغيير ينشئ إصداراً جديداً. الخادم هو الذي يحسب ويختار السياسة.</div>';
+  const lookupNotes = m.lookups ? Object.keys(m.lookups).filter((k) => !m.lookups[k]).map((k) => ({ services: "الخدمات", packages: "الباقات", agents: "الوكلاء", groups: "مجموعات الوكلاء", tiers: "فئات الوكلاء", providers: "المزوّدون" })[k]) : [];
+  const lookupHTML = lookupNotes.length > 0 ? cfNoticeHTML("cpb-lookups-unavailable", "قوائم غير متاحة لحسابك (لا صلاحية): " + lookupNotes.join("، ")) : "";
+  const filterHTML = '<div style="margin-bottom:12px;"><div style="font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:12px;color:' + C.textDim + ';margin-bottom:7px;">تصفية حسب معرّف السياسة</div>' +
+    '<input id="cpb-policy-filter" value="' + escapeHtml(m.policyFilter) + '" placeholder="policy_id (اختياري)" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.03);border:1px solid ' + C.glassBorder + ';border-radius:11px;padding:10px 14px;color:' + C.text + ';font-size:12.5px;direction:ltr;text-align:left;"></div>';
+  const addButton = canManage ? cfPrimaryButtonHTML("btn-cpb-add", "إضافة سياسة عمولة", theme) : "";
+  const latest = cpbLatestVersions();
+  const sorted = COMMISSION_POLICY_BACKEND_DIRECTORY.slice().sort((a, b) => (a.policy_id === b.policy_id ? b.version - a.version : (a.policy_id < b.policy_id ? -1 : 1)));
+  const rows = sorted.map((p) => {
+    const st = cpbWindowState(p);
+    const isLatest = latest.get(p.policy_id).version === p.version;
+    const attrs = 'data-policy-id="' + escapeHtml(p.policy_id) + '" data-version="' + p.version + '"';
+    const actions = '<div style="display:flex;gap:6px;flex-wrap:wrap;">' + cfSmallButtonHTML("cpb-detail-btn", attrs, "التفاصيل") +
+      (canManage && isLatest ? cfSmallButtonHTML("cpb-new-version", attrs, "إصدار جديد") : "") + '</div>';
+    return '<div class="cpb-row" ' + attrs + ' data-assignment-type="' + escapeHtml(p.assignment_type) + '" data-latest="' + (isLatest ? "true" : "false") + '" style="padding:12px 0;border-bottom:1px solid ' + C.glassBorder + ';">' +
+      '<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;"><div style="direction:ltr;text-align:left;font-family:Cairo,sans-serif;font-weight:700;font-size:12.5px;color:' + C.text + ';word-break:break-all;">' + escapeHtml(p.policy_id) + ' <span class="cpb-version">v' + p.version + '</span></div><span class="cpb-window" data-window="' + st[2] + '">' + AdminTableBadgeHTML(st[0], st[1]) + '</span></div>' +
+      '<div style="font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:11px;color:' + C.textDim + ';margin:4px 0;">' +
+        'النطاق: <span class="cpb-scope">' + escapeHtml(p.service_code || "كل الخدمات") + (p.package_id ? " / " + escapeHtml(p.package_id) : "") + (p.provider_id ? " / مزوّد" : "") + '</span> · ' +
+        'التعيين: <span class="cpb-assignment">' + escapeHtml(p.assignment_type) + ' ← ' + escapeHtml(cpbAssignmentTargetLabel(p.assignment_type, p.assignment_target_id)) + '</span><br>' +
+        '<span class="cpb-formula">' + escapeHtml(p.basis_type) + ' · ' + escapeHtml(p.formula_type) + ' ' + escapeHtml(JSON.stringify(p.formula_parameters)) + '</span> · ' + escapeHtml(p.funding_source) + ' · ' + escapeHtml(p.currency_code) + '<br>' +
+        'من ' + cfFormatTimestamp(p.valid_from) + ' إلى ' + (p.valid_to ? cfFormatTimestamp(p.valid_to) : "—") + '</div>' + actions + '</div>';
+  }).join("");
+  const listHTML = '<div id="cpb-list">' + (rows || cfEmptyHTML("cpb-empty", "لا توجد سياسات عمولة بعد على الخادم الفعلي")) + '</div>';
+  const detail = m.selected ? CommissionPolicyDetailHTML(m.selected) : "";
+  const form = m.policyForm.open ? CommissionPolicyFormHTML(theme) : "";
+  return adminSuccessHTML("cpb-success", m.success) + cfNoticeHTML("cpb-notice", m.notice) + intro + lookupHTML + filterHTML + addButton + listHTML + detail + form;
+}
+function CommissionPolicyDetailHTML(sel) {
+  const p = COMMISSION_POLICY_BACKEND_DIRECTORY.find((x) => x.policy_id === sel.policyId && x.version === sel.version);
+  if (!p) return "";
+  const row = (label, value, cls) => '<div style="display:flex;gap:8px;justify-content:space-between;padding:3px 0;"><span style="color:' + C.textDim + ';">' + label + '</span><span' + (cls ? ' class="' + cls + '"' : '') + ' style="direction:ltr;unicode-bidi:embed;color:' + C.text + ';text-align:left;word-break:break-all;">' + value + '</span></div>';
+  return '<div id="cpb-detail" data-policy-id="' + escapeHtml(p.policy_id) + '" data-version="' + p.version + '" style="margin-top:14px;padding:14px;border-radius:14px;border:1px solid ' + C.glassBorder + ';background:rgba(255,255,255,0.02);font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:11.5px;">' +
+    '<div style="font-family:Cairo,sans-serif;font-weight:800;font-size:13px;color:' + C.text + ';margin-bottom:6px;">تفاصيل السياسة (إصدار للقراءة فقط)</div>' +
+    row("policy_id", escapeHtml(p.policy_id)) + row("الإصدار", String(p.version), "cpb-detail-version") +
+    row("الخدمة", escapeHtml(p.service_code || "—")) + row("الباقة", escapeHtml(p.package_id || "—")) + row("package_uuid", escapeHtml(p.package_uuid || "—")) + row("المزوّد", escapeHtml(p.provider_id || "—")) +
+    row("نوع التعيين", escapeHtml(p.assignment_type)) + row("الهدف", escapeHtml(cpbAssignmentTargetLabel(p.assignment_type, p.assignment_target_id))) +
+    row("الأساس", escapeHtml(p.basis_type)) + row("الصيغة", escapeHtml(p.formula_type)) + row("معاملات الصيغة", escapeHtml(JSON.stringify(p.formula_parameters)), "cpb-detail-formula") +
+    row("التمويل", escapeHtml(p.funding_source)) + row("نموذج التوزيع", escapeHtml(p.distribution_model)) + row("الأوزان", escapeHtml(JSON.stringify(p.weight_parameters)), "cpb-detail-weights") +
+    row("احتفاظ الشركة", p.allows_company_retention ? "نعم" : "لا") + row("العملة", escapeHtml(p.currency_code)) +
+    row("من", cfFormatTimestamp(p.valid_from)) + row("إلى", p.valid_to ? cfFormatTimestamp(p.valid_to) : "—") + row("أُنشئ", cfFormatTimestamp(p.created_at)) + row("بواسطة", escapeHtml(p.created_by || "—")) +
+    '<button id="btn-cpb-detail-close" style="margin-top:10px;padding:8px 14px;border-radius:9px;cursor:pointer;border:1px solid ' + C.glassBorder + ';background:transparent;color:' + C.textDim + ';font-family:Cairo,sans-serif;font-weight:700;font-size:12px;">إغلاق</button></div>';
+}
+function cpbFreshForm(over) {
+  return Object.assign({ cfForm: true, open: true, mode: "add", policyId: null, version: null, serviceCode: "", packageUuid: "", providerId: "", assignmentType: "GLOBAL", assignmentTargetId: "", basisType: "CUSTOMER_PRICE", formulaType: "PERCENTAGE", rate: "", amount: "", paramsJson: "", fundingSource: "COMPANY_SUPPORTED", allowsRetention: "false", currencyCode: "YER", validFrom: "", validTo: "", submitting: false, error: null }, over || {});
+}
+function openAddCommissionPolicyBackendForm() {
+  state.admin.modules.commissionPoliciesBackend.policyForm = cpbFreshForm();
+  render();
+}
+function openNewVersionCommissionPolicyForm(policyId) {
+  const p = cpbLatestVersions().get(policyId);
+  if (!p) return;
+  const params = p.formula_parameters || {};
+  state.admin.modules.commissionPoliciesBackend.policyForm = cpbFreshForm({
+    mode: "version", policyId: p.policy_id, version: p.version, serviceCode: p.service_code || "", assignmentType: p.assignment_type, assignmentTargetId: p.assignment_target_id || "",
+    basisType: p.basis_type, formulaType: p.formula_type, rate: p.formula_type === "PERCENTAGE" ? String(params.rate || "") : "", amount: p.formula_type === "FIXED_AMOUNT" ? String(params.amount || "") : "",
+    paramsJson: p.formula_type === "HYBRID" || p.formula_type === "SLAB" ? JSON.stringify(params) : "", fundingSource: p.funding_source, allowsRetention: p.allows_company_retention ? "true" : "false", currencyCode: p.currency_code,
+  });
+  render();
+}
+function CommissionPolicyFormHTML(theme) {
+  const m = state.admin.modules.commissionPoliciesBackend;
+  const f = m.policyForm;
+  const isVersion = f.mode === "version";
+  // A target left over from another assignment type is never kept (it would not be one of this type's real choices).
+  const targetPool = f.assignmentType === "AGENT" ? AGENT_BACKEND_DIRECTORY.map((a) => a.id) : f.assignmentType === "AGENT_GROUP" ? COMMISSION_AGENT_GROUP_DIRECTORY.map((g) => g.id) : f.assignmentType === "AGENT_TIER" ? COMMISSION_AGENT_TIER_DIRECTORY.map((t) => t.tier_code) : [];
+  if (!isVersion && !targetPool.includes(f.assignmentTargetId)) f.assignmentTargetId = "";
+  let h = "";
+  if (isVersion) {
+    h += cfNoticeHTML("cpb-version-note", "إصدار جديد للسياسة " + f.policyId + " (الحالي v" + f.version + "). النطاق والتعيين والعملة لا تتغير؛ الإصدارات القديمة تبقى كما هي.");
+    h += cfReadonlyFieldHTML("cpb-ro-scope", "الخدمة", f.serviceCode || "كل الخدمات");
+    h += cfReadonlyFieldHTML("cpb-ro-assignment", "التعيين", f.assignmentType + " ← " + cpbAssignmentTargetLabel(f.assignmentType, f.assignmentTargetId));
+    h += cfReadonlyFieldHTML("cpb-ro-currency", "العملة", f.currencyCode);
+  } else {
+    h += cfField("cpb-service", "serviceCode", "الخدمة (اختياري — كل الخدمات إن تُرك)", "select", f.serviceCode, false,
+      [{ value: "", label: "كل الخدمات" }].concat(SERVICE_BACKEND_DIRECTORY.map((s) => ({ value: s.code, label: s.code + " — " + s.name }))));
+    if (f.serviceCode) {
+      const pk = PACKAGE_BACKEND_DIRECTORY.filter((p) => p.serviceCode === f.serviceCode);
+      h += cfField("cpb-package", "packageUuid", "الباقة (اختياري — من الكتالوج)", "select", f.packageUuid, false, [{ value: "", label: "كل باقات الخدمة" }].concat(pk.map((p) => ({ value: p.id, label: p.code + " — " + p.name }))));
+    }
+    h += cfField("cpb-provider", "providerId", "المزوّد (اختياري)", "select", f.providerId, false, [{ value: "", label: "كل المزوّدين" }].concat(COMMISSION_PROVIDER_DIRECTORY.map((p) => ({ value: p.id, label: p.code + " — " + p.name }))));
+    h += cfField("cpb-assignment-type", "assignmentType", "نوع التعيين", "select", f.assignmentType, true, CPB_ASSIGNMENT_TYPES);
+    if (f.assignmentType === "AGENT") {
+      h += cfField("cpb-target", "assignmentTargetId", "الوكيل (وكلاء حقيقيون فقط)", "select", f.assignmentTargetId, true,
+        [{ value: "", label: "— اختر وكيلاً —" }].concat(AGENT_BACKEND_DIRECTORY.map((a) => ({ value: a.id, label: a.displayName + " (" + a.accountNumber + ") — " + a.status }))));
+    } else if (f.assignmentType === "AGENT_GROUP") {
+      h += cfField("cpb-target", "assignmentTargetId", "مجموعة الوكلاء (مجموعات حقيقية فقط)", "select", f.assignmentTargetId, true,
+        [{ value: "", label: "— اختر مجموعة —" }].concat(COMMISSION_AGENT_GROUP_DIRECTORY.map((g) => ({ value: g.id, label: g.code + " — " + g.name }))));
+    } else if (f.assignmentType === "AGENT_TIER") {
+      h += cfField("cpb-target", "assignmentTargetId", "فئة الوكيل", "select", f.assignmentTargetId, true,
+        [{ value: "", label: "— اختر فئة —" }].concat(COMMISSION_AGENT_TIER_DIRECTORY.map((t) => ({ value: t.tier_code, label: t.tier_code + " — " + t.name }))));
+    }
+    h += cfField("cpb-currency", "currencyCode", "العملة (لا تتغير بعد الإنشاء)", "text", f.currencyCode, true);
+  }
+  h += cfField("cpb-basis", "basisType", "أساس الحساب", "select", f.basisType, true, CPB_BASIS_TYPES);
+  h += cfField("cpb-formula-type", "formulaType", "نوع الصيغة", "select", f.formulaType, true, CPB_FORMULA_TYPES);
+  if (f.formulaType === "PERCENTAGE") h += cfField("cpb-rate", "rate", "النسبة (عدد عشري، مثال 0.05 = 5%)", "text", f.rate, true, null, "decimal");
+  else if (f.formulaType === "FIXED_AMOUNT") h += cfField("cpb-amount", "amount", "المبلغ الثابت", "text", f.amount, true, null, "decimal");
+  else h += cfField("cpb-params-json", "paramsJson", "معاملات الصيغة (JSON)", "textarea", f.paramsJson, true);
+  h += cfField("cpb-funding", "fundingSource", "مصدر التمويل", "select", f.fundingSource, true, CPB_FUNDING_SOURCES);
+  h += cfReadonlyFieldHTML("cpb-ro-distribution", "التوزيع (V1: الوكيل المباشر فقط — يولّده النظام)", CPB_V1_DISTRIBUTION_MODEL + " · " + JSON.stringify(CPB_V1_WEIGHT_PARAMETERS));
+  h += cfField("cpb-retention", "allowsRetention", "احتفاظ الشركة بجزء من العمولة", "select", f.allowsRetention, true, [{ value: "false", label: "لا" }, { value: "true", label: "نعم" }]);
+  h += cfField("cpb-valid-from", "validFrom", "بداية السريان (اختياري)", "datetime-local", f.validFrom, false);
+  h += cfField("cpb-valid-to", "validTo", isVersion ? "نهاية السريان (اختياري — لإنهاء السياسة)" : "نهاية السريان (اختياري)", "datetime-local", f.validTo, false);
+  return cfFormDialogHTML("cpb-form-overlay", isVersion ? "إصدار جديد لسياسة عمولة" : "إضافة سياسة عمولة", f, "cpb-form-error", h, "btn-cpb-form-cancel", "btn-cpb-form-save", theme);
+}
+const CPB_DECIMAL_RE = /^\d+(\.\d+)?$/;
+/** Builds {formula_parameters} from the form, or returns {error}. Pure presentation → request mapping; the backend validates the rest. */
+function cpbBuildFormulaParameters(f) {
+  if (f.formulaType === "PERCENTAGE") { const v = String(f.rate).trim(); return CPB_DECIMAL_RE.test(v) ? { value: { rate: v } } : { error: "النسبة يجب أن تكون عدداً عشرياً غير سالب" }; }
+  if (f.formulaType === "FIXED_AMOUNT") { const v = String(f.amount).trim(); return CPB_DECIMAL_RE.test(v) ? { value: { amount: v } } : { error: "المبلغ يجب أن يكون عدداً عشرياً غير سالب" }; }
+  try {
+    const parsed = JSON.parse(f.paramsJson);
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return { error: "معاملات الصيغة يجب أن تكون كائن JSON" };
+    return { value: parsed };
+  } catch (e) { return { error: "معاملات الصيغة يجب أن تكون JSON صالحاً" }; }
+}
+async function saveCommissionPolicyBackendForm() {
+  const m = state.admin.modules.commissionPoliciesBackend;
+  const f = m.policyForm;
+  if (f.submitting) return;
+  if (!currentAccountHasAdminActionPermission(COMMISSION_POLICY_MANAGE_PERMISSION)) { f.error = "لا تملك صلاحية تنفيذ هذا الإجراء"; render(); return; }
+  const isVersion = f.mode === "version";
+  const params = cpbBuildFormulaParameters(f);
+  if (params.error) { f.error = params.error; render(); return; }
+  const validFrom = adminLocalDateTimeToIso(f.validFrom);
+  const validTo = adminLocalDateTimeToIso(f.validTo);
+  if (validFrom === undefined || validTo === undefined) { f.error = "التاريخ المدخل غير صالح"; render(); return; }
+  const common = {
+    basis_type: f.basisType, formula_type: f.formulaType, formula_parameters: params.value, funding_source: f.fundingSource,
+    distribution_model: CPB_V1_DISTRIBUTION_MODEL, weight_parameters: CPB_V1_WEIGHT_PARAMETERS, allows_company_retention: f.allowsRetention === "true",
+  };
+  if (validFrom !== null) common.valid_from = validFrom;
+  if (validTo !== null) common.valid_to = validTo;
+  let result;
+  if (isVersion) {
+    f.submitting = true; f.error = null; render();
+    result = await BackendCommissionPolicyApi.update(f.policyId, common);
+  } else {
+    const currency = String(f.currencyCode).trim();
+    if (!currency) { f.error = "العملة مطلوبة"; render(); return; }
+    // The target must be one of the real pickers' values (the backend validates it again): a customer / POS id can never be sent from here.
+    if (f.assignmentType === "AGENT" && !AGENT_BACKEND_DIRECTORY.some((a) => a.id === f.assignmentTargetId)) { f.error = "اختر وكيلاً حقيقياً من القائمة"; render(); return; }
+    if (f.assignmentType === "AGENT_GROUP" && !COMMISSION_AGENT_GROUP_DIRECTORY.some((g) => g.id === f.assignmentTargetId)) { f.error = "اختر مجموعة وكلاء حقيقية من القائمة"; render(); return; }
+    if (f.assignmentType === "AGENT_TIER" && !COMMISSION_AGENT_TIER_DIRECTORY.some((t) => t.tier_code === f.assignmentTargetId)) { f.error = "اختر فئة وكيل من القائمة"; render(); return; }
+    const payload = Object.assign({ currency_code: currency, assignment_type: f.assignmentType }, common);
+    if (f.assignmentType !== "GLOBAL") payload.assignment_target_id = f.assignmentTargetId;
+    if (f.serviceCode) payload.service_code = f.serviceCode;
+    if (f.packageUuid) {
+      const pkg = findPackageBackendById(f.packageUuid);
+      if (!pkg || pkg.serviceCode !== f.serviceCode) { f.error = "الباقة يجب أن تتبع الخدمة المختارة"; render(); return; }
+      payload.package_id = pkg.code; payload.package_uuid = pkg.id;
+    }
+    if (f.providerId) payload.provider_id = f.providerId;
+    f.submitting = true; f.error = null; render();
+    result = await BackendCommissionPolicyApi.create(payload);
+  }
+  if (!adminCheck(result, f)) return;
+  f.open = false;
+  m.selected = null;
+  await loadCommissionPoliciesBackendFromBackend();
+  m.success = isVersion ? "تم إنشاء إصدار جديد للسياسة (الإصدارات السابقة لم تتغير)." : "تم إنشاء سياسة العمولة (الإصدار 1).";
+  render();
+}
+function bindCommissionPoliciesBackendEvents() {
+  const $ = (id) => document.getElementById(id);
+  const m = state.admin.modules.commissionPoliciesBackend;
+  if ($("btn-admin-commission-policies-retry")) $("btn-admin-commission-policies-retry").onclick = () => loadCommissionPoliciesBackendFromBackend();
+  if ($("btn-cpb-add")) $("btn-cpb-add").onclick = () => openAddCommissionPolicyBackendForm();
+  document.querySelectorAll(".cpb-new-version").forEach((btn) => { btn.onclick = () => openNewVersionCommissionPolicyForm(btn.getAttribute("data-policy-id")); });
+  document.querySelectorAll(".cpb-detail-btn").forEach((btn) => { btn.onclick = () => { m.selected = { policyId: btn.getAttribute("data-policy-id"), version: Number(btn.getAttribute("data-version")) }; render(); }; });
+  if ($("btn-cpb-detail-close")) $("btn-cpb-detail-close").onclick = () => { m.selected = null; render(); };
+  if ($("btn-cpb-form-cancel")) $("btn-cpb-form-cancel").onclick = () => { m.policyForm.open = false; render(); };
+  if ($("btn-cpb-form-save")) $("btn-cpb-form-save").onclick = () => saveCommissionPolicyBackendForm();
+  if ($("cpb-policy-filter")) {
+    $("cpb-policy-filter").oninput = (e) => { m.policyFilter = e.target.value; };
+    $("cpb-policy-filter").onkeydown = (e) => { if (e.key === "Enter") loadCommissionPoliciesBackendFromBackend(); };
+  }
+}
+CF_BINDERS.push(bindCommissionPoliciesBackendEvents);
+
+/* ════════════════════════════════════════════════════════════════════
    LEGACY / DEMO LOCAL ADMIN MODULES — separation from the real-backend modules.
    Each module below still works on its own in-memory arrays, because other (agent / customer / employee) screens read
    those same arrays and nothing here deletes legacy code. What changes is honesty: the module is labelled local/demo
@@ -31714,7 +31989,7 @@ const ADMIN_LEGACY_LOCAL_MODULES = {
   services: ["servicesBackend"],
   agents: ["agentsBackend"],
   operations: ["operationsBackend"],
-  commissions: ["pricingBackend", "gatewaysBackend", "marginFxBackend"],
+  commissions: ["pricingBackend", "gatewaysBackend", "marginFxBackend", "commissionPoliciesBackend"],
   customers: ["defaultAgentsBackend"],
   games: ["packagesBackend"],
   telecomCompanies: ["packagesBackend"],
@@ -39930,6 +40205,7 @@ const ADMIN_MODULE_RENDERERS = {
   pricingBackend: AdminPricingBackendModuleHTML,
   marginFxBackend: AdminMarginFxBackendModuleHTML,
   defaultAgentsBackend: AdminDefaultAgentsBackendModuleHTML,
+  commissionPoliciesBackend: AdminCommissionPoliciesBackendModuleHTML,
   transactionsBackend: AdminTransactionsBackendModuleHTML,
   operationsBackend: AdminOperationsBackendModuleHTML,
   telecomCompanies: AdminTelecomCompaniesModuleHTML,
@@ -41104,6 +41380,9 @@ function attachEvents() {
       }
       if (moduleId === "defaultAgentsBackend") {
         loadDefaultAgentsBackendFromBackend();
+      }
+      if (moduleId === "commissionPoliciesBackend") {
+        loadCommissionPoliciesBackendFromBackend();
       }
       // REAL TRANSACTIONS V1 — fresh entry refetches from the real backend.
       if (moduleId === "transactionsBackend") {
@@ -45192,6 +45471,9 @@ if (!hasAdministratorAccount()) {
   }
   if (state.app.currentScreen === "adminPanel" && getSafeActiveAdminModuleId() === "defaultAgentsBackend" && state.session.accessToken) {
     loadDefaultAgentsBackendFromBackend();
+  }
+  if (state.app.currentScreen === "adminPanel" && getSafeActiveAdminModuleId() === "commissionPoliciesBackend" && state.session.accessToken) {
+    loadCommissionPoliciesBackendFromBackend();
   }
   if (state.app.currentScreen === "adminPanel" && getSafeActiveAdminModuleId() === "transactionsBackend" && state.session.accessToken) {
     loadRealTransactionsList();
