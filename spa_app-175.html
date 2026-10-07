@@ -17726,7 +17726,21 @@ const ADMIN_ROLE_LABELS = {
  * not set the value is null and no seeded demo account can sign in (authenticateAccount never matches a
  * null password). Mock data only — unrelated to the real backend's authentication.
  */
-const DEMO_SEED_PASSWORD = (typeof window !== "undefined" && typeof window.OMDA_DEMO_PASSWORD === "string" && window.OMDA_DEMO_PASSWORD.length >= 6) ? window.OMDA_DEMO_PASSWORD : null;
+/**
+ * RUNTIME PROFILE — PRODUCTION ≠ DEMO. This file ships with no build step, so the profile is a global set BEFORE this
+ * file's script element, exactly like `window.OMDA_API_BASE_URL`: `window.OMDA_RUNTIME_PROFILE = "development"` enables the
+ * local demo / offline authentication surface (seeded demo accounts, the local "create administrator" setup, the local
+ * login fallback, persisted local accounts). ANYTHING ELSE — unset, misspelled, "production" — is production, the
+ * fail-safe default: authentication is the real backend only (POST /api/v1/auth/login → token → GET /auth/me), no demo
+ * account exists in memory or in storage, no local administrator can be created, a failed backend login never falls
+ * back to a local account, and no password is ever written to localStorage. These are runtime guards in the code paths
+ * themselves (authenticateAccount, the login handler, the setup handler, hasAdministratorAccount, persistAuthState,
+ * loadPersistedAuthState), never CSS. The legacy local modules stay (labelled local / demo) but cannot be reached through
+ * a local credential in production.
+ */
+const OMDA_RUNTIME_PROFILE = (typeof window !== "undefined" && window.OMDA_RUNTIME_PROFILE === "development") ? "development" : "production";
+const LOCAL_DEMO_AUTH_ENABLED = OMDA_RUNTIME_PROFILE === "development";
+const DEMO_SEED_PASSWORD = (LOCAL_DEMO_AUTH_ENABLED && typeof window !== "undefined" && typeof window.OMDA_DEMO_PASSWORD === "string" && window.OMDA_DEMO_PASSWORD.length >= 6) ? window.OMDA_DEMO_PASSWORD : null;
 const ACCOUNTS = [
   { accountId: "acc_emp_001", loginIdentifier: "emp-support1", password: DEMO_SEED_PASSWORD, role: "employee", status: "active", linkedEntityId: "emp_001" },
   { accountId: "acc_emp_002", loginIdentifier: "emp-support2", password: DEMO_SEED_PASSWORD, role: "employee", status: "disabled", linkedEntityId: "emp_002" },
@@ -17748,6 +17762,8 @@ const ACCOUNTS = [
   { accountId: "acc_cus_002", loginIdentifier: "733445566", password: DEMO_SEED_PASSWORD, role: "customer", status: "active", linkedEntityId: "cus_002" },
   { accountId: "acc_cus_004", loginIdentifier: "125566778", password: DEMO_SEED_PASSWORD, role: "customer", status: "active", linkedEntityId: "cus_004" },
 ];
+// Production: no local account exists at all (the seed rows above are unreachable demo data).
+if (!LOCAL_DEMO_AUTH_ENABLED) ACCOUNTS.length = 0;
 /** Resolves an account's own linked business record — the only place
  * this role-to-directory mapping exists. Returns null for a role with
  * no matching entry, degrading safely rather than throwing. */
@@ -17771,6 +17787,8 @@ function findEntityForAccount(account) {
  * @returns {{success: true, role: "administrator"|"employee"|"agent", account: object, entity: object|null} | {success: false, error: string}}
  */
 function authenticateAccount(loginIdentifier, password) {
+  // Production: there is no local authentication at all (the real backend is the only authority).
+  if (!LOCAL_DEMO_AUTH_ENABLED) return { success: false, error: "بيانات الدخول أو كلمة المرور غير صحيحة" };
   const identifier = (loginIdentifier || "").trim();
   const pass = password || "";
   if (!identifier || !pass) {
@@ -18064,6 +18082,8 @@ function completeLoginForAccount(result) {
  * with nothing else to keep in sync.
  */
 function hasAdministratorAccount() {
+  // Production never offers the local "create administrator" setup: the gate reads as "already set up".
+  if (!LOCAL_DEMO_AUTH_ENABLED) return true;
   return ACCOUNTS.some((a) => a.role === "administrator");
 }
 
@@ -18080,8 +18100,14 @@ function hasAdministratorAccount() {
  * keys is ever written to storage.
  */
 function persistAuthState() {
-  PersistenceStore.save("accounts", ACCOUNTS);
-  PersistenceStore.save("administratorDirectory", ADMINISTRATOR_DIRECTORY);
+  if (LOCAL_DEMO_AUTH_ENABLED) {
+    PersistenceStore.save("accounts", ACCOUNTS);
+    PersistenceStore.save("administratorDirectory", ADMINISTRATOR_DIRECTORY);
+  } else {
+    // Production: local accounts (and their plaintext passwords) are never written, and an older copy is removed.
+    PersistenceStore.remove("accounts");
+    PersistenceStore.remove("administratorDirectory");
+  }
   // SPA ↔ Backend Integration V1: `refreshToken` is deliberately EXCLUDED
   // from what gets written to localStorage — kept in memory only (see
   // freshSessionState()'s own doc comment on why). Every other field of
@@ -18103,6 +18129,16 @@ function persistAuthState() {
  * Called once, at bootstrap, before the first render.
  */
 function loadPersistedAuthState() {
+  if (!LOCAL_DEMO_AUTH_ENABLED) {
+    // Production: stored local accounts / administrators are discarded (and erased), and only a REAL backend session
+    // (it carries an access token) is restored — a stored local-account session can never log anyone in.
+    PersistenceStore.remove("accounts");
+    PersistenceStore.remove("administratorDirectory");
+    const savedProductionSession = PersistenceStore.load("session", null);
+    if (savedProductionSession && savedProductionSession.accessToken) Object.assign(state.session, savedProductionSession);
+    else PersistenceStore.remove("session");
+    return;
+  }
   const savedAccounts = PersistenceStore.load("accounts", null);
   if (savedAccounts) {
     ACCOUNTS.length = 0;
@@ -24659,7 +24695,7 @@ function renderUnifiedLoginScreen() {
   const theme = GOLD_THEME;
   const s = state.session;
   const errorHTML = s.loginForm.error
-    ? '<div style="margin-bottom:14px;padding:10px 14px;border-radius:11px;background:' + C.dangerSoft + ';font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:12px;color:' + C.danger + ';text-align:center;">' + s.loginForm.error + '</div>'
+    ? '<div id="login-error" role="alert" style="margin-bottom:14px;padding:10px 14px;border-radius:11px;background:' + C.dangerSoft + ';font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:12px;color:' + C.danger + ';text-align:center;">' + s.loginForm.error + '</div>'
     : "";
   return '' +
     '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;">' +
@@ -40364,6 +40400,7 @@ function attachEvents() {
   });
   if ($("btn-admin-setup-create")) $("btn-admin-setup-create").onclick = () => {
     const f = state.adminSetup;
+    if (!LOCAL_DEMO_AUTH_ENABLED) { f.error = "الإعداد المحلي غير متاح في وضع الإنتاج"; render(); return; }
     const name = f.name.trim();
     const identifier = f.loginIdentifier.trim();
     if (!name || !identifier || !f.password || !f.confirmPassword) {
@@ -40491,6 +40528,13 @@ function attachEvents() {
       return;
     }
 
+    if (!LOCAL_DEMO_AUTH_ENABLED && (backendResult.networkError || backendResult.status === 401)) {
+      // Production: the backend's answer is final — no local fallback, ever.
+      lf.submitting = false;
+      lf.error = backendResult.networkError ? backendResult.error.message : "بيانات الدخول أو كلمة المرور غير صحيحة";
+      render();
+      return;
+    }
     if (backendResult.networkError || backendResult.status === 401) {
       const result = authenticateAccount(loginIdentifier, password);
       state.session.loginForm.submitting = false;
