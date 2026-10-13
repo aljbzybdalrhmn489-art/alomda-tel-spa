@@ -4452,8 +4452,45 @@ const BACKEND_API_CONFIG = {
  * reached the server at all (offline, backend not running, CORS
  * rejection) — never confused with a real 401/403/500 from the server.
  */
+/**
+ * Silent session renewal (P2-01). The access token is short-lived; the refresh token lives in memory only (never persisted), so a
+ * reload still ends in the login screen exactly as before. A 401 on an AUTHENTICATED call triggers ONE renewal and ONE retry of that call.
+ *
+ * SINGLE FLIGHT is a security requirement, not an optimisation: the backend rotates the refresh token on every use and treats the
+ * second presentation of an old token as theft (the whole token family is revoked). Concurrent 401s therefore share one in-flight renewal.
+ * Outcomes: renewed -> the caller never sees the 401; refused (401/403/anything not ok) -> the caller sees the ORIGINAL 401 and logs out
+ * as it always did; network failure -> the caller sees the network error (the session is not declared dead because the wire was).
+ */
+let sessionRenewalInFlight = null;
+function renewSessionTokens() {
+  if (sessionRenewalInFlight) return sessionRenewalInFlight;
+  const presented = state.session.refreshToken;
+  if (!presented) return Promise.resolve({ renewed: false, networkError: null });
+  sessionRenewalInFlight = (async () => {
+    const result = await ApiClient.request("POST", "/api/v1/auth/refresh", { auth: false, body: { refresh_token: presented }, noRenew: true });
+    if (result.networkError) return { renewed: false, networkError: result };
+    if (!result.ok || !result.data || !result.data.access_token || !result.data.refresh_token) return { renewed: false, networkError: null };
+    state.session.accessToken = result.data.access_token;
+    state.session.refreshToken = result.data.refresh_token;
+    persistAuthState();
+    return { renewed: true, networkError: null };
+  })().finally(() => { sessionRenewalInFlight = null; });
+  return sessionRenewalInFlight;
+}
 const ApiClient = {
   async request(method, path, options) {
+    const opts = options || {};
+    const usedToken = state.session.accessToken;
+    const first = await this.requestOnce(method, path, options);
+    if (first.status !== 401 || opts.auth === false || opts.noRenew || !state.session.refreshToken) return first;
+    // Another call already renewed while this one was in flight: just retry with the new token (no second rotation).
+    if (state.session.accessToken !== usedToken) return this.requestOnce(method, path, Object.assign({}, opts, { noRenew: true }));
+    const renewal = await renewSessionTokens();
+    if (renewal.networkError) return renewal.networkError;
+    if (!renewal.renewed) return first;
+    return this.requestOnce(method, path, Object.assign({}, opts, { noRenew: true }));
+  },
+  async requestOnce(method, path, options) {
     const opts = options || {};
     const url = BACKEND_API_CONFIG.baseUrl + path;
     const headers = { "Content-Type": "application/json" };
@@ -4966,7 +5003,226 @@ function renderMyWalletHomeScreen() {
         balanceBodyHTML +
         '<button id="btn-my-wallet-refresh" style="margin-top:14px;padding:8px 16px;border-radius:10px;background:rgba(255,255,255,0.06);border:1px solid ' + C.glassBorder + ';color:' + (theme.bright || theme.accent) + ';font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:12px;cursor:pointer;">تحديث</button>' +
       '</div>' +
-    '</div>' + RealTransactionsPanelHTML(theme);
+    '</div>' + MyCommissionPanelHTML(theme) + RealTransactionsPanelHTML(theme);
+}
+
+/**
+ * ADR-Y2 REVISION 3, PHASE 1 — "My Commissions": the signed-in agent's READ-ONLY commission report, from the four real backend routes
+ * (`commission-report-routes.ts`): summary, items, rates. The agent is always the authenticated party (the routes accept no agent id); this
+ * screen has no way to ask for anyone else's data. Amounts are shown exactly as the server sends them (decimal strings, never converted to
+ * numbers here); currencies are never added together. ACCRUED (recorded by the accrual process) and EXPECTED (projected, not accrued yet)
+ * are shown separately. Totals are REPORT totals only — the monthly settlement into the wallet does not exist yet, and the screen says so.
+ * Period boundaries are UTC calendar days / months, as the server states in `period.basis`.
+ */
+const BackendCommissionApi = {
+  summary(granularity, from, to) {
+    return ApiClient.get("/api/v1/commissions/summary?granularity=" + encodeURIComponent(granularity) + "&from=" + encodeURIComponent(from) + "&to=" + encodeURIComponent(to));
+  },
+  items(granularity, bucket, currency, cursor) {
+    let path = "/api/v1/commissions/items?granularity=" + encodeURIComponent(granularity) + "&from=" + encodeURIComponent(bucket) + "&to=" + encodeURIComponent(bucket) + "&currency=" + encodeURIComponent(currency) + "&limit=50";
+    if (cursor) path += "&cursor=" + encodeURIComponent(cursor);
+    return ApiClient.get(path);
+  },
+  rates() { return ApiClient.get("/api/v1/commissions/rates"); },
+};
+function myCommissionDefaultPeriod(granularity) {
+  const now = new Date();
+  if (granularity === "day") {
+    const start = new Date(now.getTime() - 6 * 86400000);
+    return { from: start.toISOString().slice(0, 10), to: now.toISOString().slice(0, 10) };
+  }
+  const month = now.toISOString().slice(0, 7);
+  return { from: month, to: month };
+}
+function freshMyCommissionsState() {
+  const period = myCommissionDefaultPeriod("month");
+  return {
+    granularity: "month", from: period.from, to: period.to,
+    loading: false, error: null, loaded: false, requestSeq: 0, summary: null,
+    drill: { bucket: null, currency: null, loading: false, loadingMore: false, error: null, items: [], nextCursor: null },
+    rates: { open: false, loading: false, error: null, data: null },
+  };
+}
+function mcm() { return state.session.myCommissions; }
+function describeMyCommissionError(result) {
+  if (result.networkError || result.status === 401 || result.status === 403) return describeApiError(result);
+  if (result.status === 400) return "المدخلات غير صالحة: " + describeApiError(result);
+  if (result.status >= 500) return "خطأ في الخادم. " + describeApiError(result);
+  return describeApiError(result);
+}
+async function loadMyCommissionSummary() {
+  const c = mcm();
+  const seq = ++c.requestSeq;
+  c.loading = true; c.error = null; c.drill = freshMyCommissionsState().drill;
+  render();
+  const result = await BackendCommissionApi.summary(c.granularity, c.from, c.to);
+  if (seq !== c.requestSeq) return; // a newer request superseded this one
+  c.loading = false; c.loaded = true;
+  if (result.status === 401) { handleApiUnauthorized(); return; }
+  if (!result.ok) { c.error = describeMyCommissionError(result); c.summary = null; render(); return; }
+  c.summary = result.data;
+  render();
+}
+async function openMyCommissionBucket(bucket, currency) {
+  const c = mcm();
+  const d = c.drill = { bucket, currency, loading: true, loadingMore: false, error: null, items: [], nextCursor: null };
+  render();
+  const result = await BackendCommissionApi.items(c.granularity, bucket, currency, null);
+  if (c.drill !== d) return; // the user opened another bucket meanwhile
+  d.loading = false;
+  if (result.status === 401) { handleApiUnauthorized(); return; }
+  if (!result.ok) { d.error = describeMyCommissionError(result); render(); return; }
+  d.items = result.data.items;
+  d.nextCursor = result.meta ? (result.meta.next_cursor || null) : null;
+  render();
+}
+async function loadMoreMyCommissionItems() {
+  const c = mcm();
+  const d = c.drill;
+  if (!d.nextCursor || d.loadingMore) return;
+  d.loadingMore = true; render();
+  const result = await BackendCommissionApi.items(c.granularity, d.bucket, d.currency, d.nextCursor);
+  if (c.drill !== d) return;
+  d.loadingMore = false;
+  if (result.status === 401) { handleApiUnauthorized(); return; }
+  if (!result.ok) { d.error = describeMyCommissionError(result); render(); return; }
+  d.items = d.items.concat(result.data.items);
+  d.nextCursor = result.meta ? (result.meta.next_cursor || null) : null;
+  render();
+}
+async function toggleMyCommissionRates() {
+  const r = mcm().rates;
+  r.open = !r.open;
+  if (!r.open || r.data) { render(); return; }
+  r.loading = true; r.error = null; render();
+  const result = await BackendCommissionApi.rates();
+  r.loading = false;
+  if (result.status === 401) { handleApiUnauthorized(); return; }
+  if (!result.ok) { r.error = describeMyCommissionError(result); render(); return; }
+  r.data = result.data;
+  render();
+}
+const MY_COMMISSION_STATUS_META = {
+  ACCRUED: { label: "مُستحقة", color: "#3FAE6A" },
+  EXPECTED: { label: "متوقعة", color: "#C9A24B" },
+};
+function myCommissionTime(iso) {
+  return typeof iso === "string" ? escapeHtml(iso.slice(0, 19).replace("T", " ")) : "";
+}
+function myCommissionFormulaText(rate) {
+  const p = rate.formula && rate.formula.parameters ? rate.formula.parameters : {};
+  if (rate.formula.type === "PERCENTAGE" && typeof p.rate === "string") return "نسبة " + escapeHtml(p.rate);
+  if (rate.formula.type === "FIXED_AMOUNT" && typeof p.amount === "string") return "مبلغ ثابت " + escapeHtml(p.amount);
+  return escapeHtml(String(rate.formula.type));
+}
+function MyCommissionPanelHTML(theme) {
+  const c = mcm();
+  const dim = 'font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:11.5px;color:' + C.textDim + ';';
+  const inputStyle = 'background:rgba(255,255,255,0.03);border:1px solid ' + C.glassBorder + ';border-radius:10px;padding:8px 10px;color:' + C.text + ';outline:none;font-family:Cairo,sans-serif;font-size:12.5px;direction:ltr;text-align:left;';
+  const btnStyle = 'padding:8px 14px;border-radius:10px;background:rgba(255,255,255,0.06);border:1px solid ' + C.glassBorder + ';color:' + (theme.bright || theme.accent) + ';font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:12px;cursor:pointer;';
+  const badge = (status) => {
+    const meta = MY_COMMISSION_STATUS_META[status] || { label: escapeHtml(String(status)), color: "#8A8A8A" };
+    return '<span class="my-comm-status" data-status="' + escapeHtml(String(status)) + '">' + AdminTableBadgeHTML(meta.label, meta.color) + '</span>';
+  };
+
+  const controls =
+    '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:12px;">' +
+      '<select id="my-comm-granularity" style="' + inputStyle + '"><option value="month"' + (c.granularity === "month" ? " selected" : "") + '>شهري</option><option value="day"' + (c.granularity === "day" ? " selected" : "") + '>يومي</option></select>' +
+      '<input id="my-comm-from" class="my-comm-input" data-field="from" value="' + escapeHtml(c.from) + '" placeholder="' + (c.granularity === "day" ? "YYYY-MM-DD" : "YYYY-MM") + '" style="' + inputStyle + 'width:110px;" />' +
+      '<span style="' + dim + '">إلى</span>' +
+      '<input id="my-comm-to" class="my-comm-input" data-field="to" value="' + escapeHtml(c.to) + '" placeholder="' + (c.granularity === "day" ? "YYYY-MM-DD" : "YYYY-MM") + '" style="' + inputStyle + 'width:110px;" />' +
+      '<button id="btn-my-comm-load" ' + (c.loading ? "disabled " : "") + 'style="' + btnStyle + '">' + (c.loading ? "جارٍ التحميل…" : "عرض") + '</button>' +
+      '<button id="btn-my-comm-rates" style="' + btnStyle + '">' + (c.rates.open ? "إخفاء نسب العمولة" : "نسب عمولتي") + '</button>' +
+    '</div>';
+
+  let body = "";
+  if (c.error) {
+    body = '<div id="my-comm-error" style="margin-top:12px;padding:10px 14px;border-radius:11px;background:' + C.dangerSoft + ';font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:12px;color:' + C.danger + ';">' + escapeHtml(c.error) + '</div>';
+  } else if (c.loaded && c.summary) {
+    const s = c.summary;
+    const reviewHTML = s.agent && s.agent.review_required
+      ? '<div id="my-comm-review" style="margin-top:12px;padding:10px 14px;border-radius:11px;background:' + C.dangerSoft + ';font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:12px;color:' + C.danger + ';">حسابك غير نشط (' + escapeHtml(String(s.agent.status)) + ') — تُعرض عمولاتك للاطلاع فقط ولا يُنفَّذ أي إجراء عليها.</div>'
+      : "";
+    const totalsHTML = s.totals.length === 0
+      ? '<div id="my-comm-empty" style="margin-top:12px;' + dim + '">لا توجد عمولات مسجلة في هذه الفترة.</div>'
+      : '<div id="my-comm-totals" style="margin-top:12px;display:grid;gap:8px;">' + s.totals.map((t) =>
+          '<div class="my-comm-total" data-currency="' + escapeHtml(t.currency) + '" style="padding:12px;border-radius:12px;border:1px solid ' + theme.border + ';background:' + theme.soft + ';">' +
+            '<div style="font-family:Cairo,sans-serif;font-weight:800;font-size:13px;color:' + C.text + ';direction:ltr;text-align:left;">' + escapeHtml(t.currency) + '</div>' +
+            '<div style="display:flex;justify-content:space-between;gap:8px;margin-top:6px;' + dim + '"><span>' + badge("ACCRUED") + ' (' + escapeHtml(String(t.accrued_count)) + ')</span><span class="my-comm-total-accrued" style="direction:ltr;color:' + C.text + ';">' + escapeHtml(t.accrued_total) + '</span></div>' +
+            '<div style="display:flex;justify-content:space-between;gap:8px;margin-top:4px;' + dim + '"><span>' + badge("EXPECTED") + ' (' + escapeHtml(String(t.expected_count)) + ')</span><span class="my-comm-total-expected" style="direction:ltr;color:' + C.text + ';">' + escapeHtml(t.expected_total) + '</span></div>' +
+          '</div>').join("") + '</div>';
+    const seriesHTML = s.series.length === 0 ? "" :
+      '<div id="my-comm-series" style="margin-top:12px;">' +
+        '<div style="font-family:Cairo,sans-serif;font-weight:800;font-size:12.5px;color:' + C.text + ';margin-bottom:6px;">' + (c.granularity === "day" ? "الأيام" : "الأشهر") + ' (اضغط للتفاصيل)</div>' +
+        s.series.map((b) =>
+          '<div class="my-comm-bucket" role="button" tabindex="0" data-bucket="' + escapeHtml(b.bucket) + '" data-currency="' + escapeHtml(b.currency) + '" style="display:flex;justify-content:space-between;gap:8px;padding:8px 10px;margin-bottom:4px;border-radius:10px;border:1px solid ' + C.glassBorder + ';cursor:pointer;' + dim + '">' +
+            '<span style="direction:ltr;color:' + C.text + ';">' + escapeHtml(b.bucket) + ' · ' + escapeHtml(b.currency) + '</span>' +
+            '<span style="direction:ltr;">' + escapeHtml(b.accrued_total) + ' / ' + escapeHtml(b.expected_total) + '</span>' +
+          '</div>').join("") +
+      '</div>';
+    const noteHTML = '<div id="my-comm-note" style="margin-top:10px;font-size:10.5px;color:' + C.textFaint + ';font-family:\'IBM Plex Sans Arabic\',sans-serif;">هذه تقارير فقط: ' + escapeHtml(s.settlement && s.settlement.note ? s.settlement.note : "") + ' الفترات بتوقيت UTC.</div>';
+    body = reviewHTML + totalsHTML + seriesHTML + noteHTML;
+  } else if (c.loading) {
+    body = '<div style="margin-top:12px;' + dim + '">جارٍ التحميل من الخادم…</div>';
+  }
+
+  let drillHTML = "";
+  const d = c.drill;
+  if (d.bucket) {
+    const rows = d.items.map((it) =>
+      '<div class="my-comm-item" data-id="' + escapeHtml(it.id) + '" data-status="' + escapeHtml(it.status) + '" style="padding:8px 10px;margin-bottom:4px;border-radius:10px;border:1px solid ' + C.glassBorder + ';' + dim + '">' +
+        '<div style="display:flex;justify-content:space-between;gap:8px;"><span>' + badge(it.status) + '</span><span class="my-comm-item-amount" style="direction:ltr;color:' + C.text + ';font-weight:700;">' + escapeHtml(it.amount) + ' ' + escapeHtml(it.currency) + '</span></div>' +
+        '<div style="margin-top:3px;direction:ltr;text-align:left;font-size:10.5px;">' + myCommissionTime(it.date) + ' · tx ' + escapeHtml(String(it.transaction_id).slice(0, 8)) + (it.transaction_status === "REVERSED" ? ' · <span class="my-comm-reversed" style="color:' + C.danger + ';">REVERSED</span>' : "") + '</div>' +
+      '</div>').join("");
+    drillHTML =
+      '<div id="my-comm-items" data-bucket="' + escapeHtml(d.bucket) + '" style="margin-top:12px;padding:12px;border-radius:12px;border:1px solid ' + C.glassBorder + ';">' +
+        '<div style="font-family:Cairo,sans-serif;font-weight:800;font-size:12.5px;color:' + C.text + ';margin-bottom:6px;direction:ltr;text-align:left;">' + escapeHtml(d.bucket) + ' · ' + escapeHtml(d.currency) + '</div>' +
+        (d.loading ? '<div style="' + dim + '">جارٍ التحميل…</div>' : d.error ? '<div id="my-comm-items-error" style="color:' + C.danger + ';font-size:12px;">' + escapeHtml(d.error) + '</div>' : (rows || '<div style="' + dim + '">لا توجد بنود.</div>')) +
+        (d.nextCursor ? '<button id="btn-my-comm-more" ' + (d.loadingMore ? "disabled " : "") + 'style="' + btnStyle + 'margin-top:6px;">' + (d.loadingMore ? "جارٍ التحميل…" : "المزيد") + '</button>' : "") +
+      '</div>';
+  }
+
+  let ratesHTML = "";
+  if (c.rates.open) {
+    const r = c.rates;
+    ratesHTML = '<div id="my-comm-rates" style="margin-top:12px;padding:12px;border-radius:12px;border:1px solid ' + C.glassBorder + ';">' +
+      '<div style="font-family:Cairo,sans-serif;font-weight:800;font-size:12.5px;color:' + C.text + ';margin-bottom:6px;">نسب عمولتي الحالية (حسب الأسبقية)</div>' +
+      (r.loading ? '<div style="' + dim + '">جارٍ التحميل…</div>' : r.error ? '<div style="color:' + C.danger + ';font-size:12px;">' + escapeHtml(r.error) + '</div>' :
+        (r.data && r.data.rates.length > 0 ? r.data.rates.map((rate) =>
+          '<div class="my-comm-rate" style="padding:6px 0;border-bottom:1px solid ' + C.glassBorder + ';' + dim + '">' +
+            '<span style="color:' + C.text + ';">#' + escapeHtml(String(rate.precedence_rank)) + '</span> · ' + myCommissionFormulaText(rate) + ' · ' + escapeHtml(rate.currency) +
+            ' · النطاق: ' + escapeHtml(String(rate.scope.tier)) + (rate.scope.service_id ? ' / ' + escapeHtml(rate.scope.service_id) : "") +
+          '</div>').join("") : '<div style="' + dim + '">لا توجد سياسة عمولة مطبّقة عليك حاليًا.</div>')) +
+    '</div>';
+  }
+
+  return '<div id="my-commissions-panel" style="padding:20px 20px 0;">' +
+    '<div style="padding:16px;border-radius:16px;border:1px solid ' + theme.border + ';background:rgba(255,255,255,0.02);">' +
+      '<div style="font-family:Cairo,sans-serif;font-weight:800;font-size:15px;color:' + C.text + ';">عمولاتي</div>' +
+      controls + body + drillHTML + ratesHTML +
+    '</div></div>';
+}
+function bindMyCommissionEvents() {
+  const $ = (id) => document.getElementById(id);
+  const c = state.session.myCommissions;
+  if (!c || !$("my-commissions-panel")) return;
+  document.querySelectorAll(".my-comm-input").forEach((input) => {
+    input.oninput = (e) => { c[input.getAttribute("data-field")] = e.target.value; }; // state only: no re-render mid-keystroke
+  });
+  if ($("my-comm-granularity")) $("my-comm-granularity").onchange = (e) => {
+    c.granularity = e.target.value === "day" ? "day" : "month";
+    const p = myCommissionDefaultPeriod(c.granularity);
+    c.from = p.from; c.to = p.to; c.summary = null; c.loaded = false; c.error = null; c.drill = freshMyCommissionsState().drill;
+    render();
+  };
+  if ($("btn-my-comm-load")) $("btn-my-comm-load").onclick = () => loadMyCommissionSummary();
+  if ($("btn-my-comm-rates")) $("btn-my-comm-rates").onclick = () => toggleMyCommissionRates();
+  if ($("btn-my-comm-more")) $("btn-my-comm-more").onclick = () => loadMoreMyCommissionItems();
+  document.querySelectorAll(".my-comm-bucket").forEach((row) => {
+    const open = () => openMyCommissionBucket(row.getAttribute("data-bucket"), row.getAttribute("data-currency"));
+    row.onclick = open;
+    row.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } };
+  });
 }
 
 /**
@@ -11549,13 +11805,18 @@ function employeeHasSupportCategory(employeeId, categoryKey) {
    unauthorized module from ever rendering, independent of what the
    drawer happens to show.
    ════════════════════════════════════════════════════════════════════ */
+/** A module is backed by the real server when it is the Provider admin or a "...Backend" module. Every other module is local demo data held in the browser. */
+function isAdminModuleBackedByServer(moduleId) {
+  return moduleId === "providers" || /Backend$/.test(moduleId);
+}
 function getAdminNavItemsForAccount(account) {
   if (!account) return [];
-  if (account.role === "administrator") return ADMIN_NAV_ITEMS.slice();
-  if (account.role === "employee") {
-    return ADMIN_NAV_ITEMS.filter((item) => employeeHasAdminModuleAccess(account.linkedEntityId, item.id));
-  }
-  return [];
+  let items = [];
+  if (account.role === "administrator") items = ADMIN_NAV_ITEMS.slice();
+  else if (account.role === "employee") items = ADMIN_NAV_ITEMS.filter((item) => employeeHasAdminModuleAccess(account.linkedEntityId, item.id));
+  // PRODUCTION shows only what the server really owns: a local demo module (fake figures that vanish on reload and never reach the server) must not be
+  // reachable at all, let alone look like a working screen. The development profile keeps them (labelled) for the local demo.
+  return LOCAL_DEMO_AUTH_ENABLED ? items : items.filter((item) => isAdminModuleBackedByServer(item.id));
 }
 
 /* ════════════════════════════════════════════════════════════════════
@@ -17957,6 +18218,8 @@ function freshSessionState() {
     // comment on why this distinguishes it from an Admin identity).
     backendPartyId: null,
     myWallet: { loading: false, error: null, currency: "YER", data: null },
+    // ADR-Y2 Rev 3 Phase 1 — the agent commission report (in memory only, never persisted).
+    myCommissions: freshMyCommissionsState(),
     // REAL TRANSACTIONS V1 — in-memory only (see persistAuthState): a reload always refetches.
     realTransactions: freshRealTransactionsState(),
     // REAL OPERATIONS V1 — in-memory only (never persisted).
@@ -18116,7 +18379,7 @@ function persistAuthState() {
   // PHASE: AGENT + WALLET/BALANCE + EXISTING TRANSACTION V1 — `myWallet`
   // is excluded too: a cached balance is exactly the kind of "stale data
   // presented as fresh" §16 forbids. A reload always refetches it live.
-  const persistable = Object.assign({}, state.session, { refreshToken: null, myWallet: { loading: false, error: null, currency: "YER", data: null }, realTransactions: freshRealTransactionsState(), realOperations: freshRealOperationsState() });
+  const persistable = Object.assign({}, state.session, { refreshToken: null, myWallet: { loading: false, error: null, currency: "YER", data: null }, myCommissions: freshMyCommissionsState(), realTransactions: freshRealTransactionsState(), realOperations: freshRealOperationsState() });
   PersistenceStore.save("session", persistable);
 }
 /**
@@ -32544,6 +32807,10 @@ function isActiveRealEmployeeProfile(profile) {
  * Used by the login handler and by the boot refresh; never duplicated.
  */
 function routeRealRoleLessIdentity(meData) {
+  // The initial `state.session` literal predates the real-backend fields (myWallet, myCommissions, realTransactions, …); a first
+  // login on a fresh page must not render against a session that lacks them. Fill ONLY what is missing — never overwrite.
+  const defaults = freshSessionState();
+  for (const key of Object.keys(defaults)) if (state.session[key] === undefined) state.session[key] = defaults[key];
   state.session.isAuthenticated = true;
   state.session.backendPartyId = meData.party_id;
   state.session.loginForm = { loginIdentifier: "", password: "", error: null, submitting: false };
@@ -32564,6 +32831,7 @@ function loadRealIdentityHomeData() {
     loadRealEmployeeHistory();
   } else {
     loadMyWalletBalance();
+    loadMyCommissionSummary();
     loadRealTransactionsList();
   }
 }
@@ -40648,6 +40916,7 @@ function attachEvents() {
     render();
   };
   if ($("btn-my-wallet-refresh")) $("btn-my-wallet-refresh").onclick = () => loadMyWalletBalance();
+  bindMyCommissionEvents();
   // Add Customer entry point (Phase 8h correction) — calls the exact
   // same openAddCustomerForm() Admin/Agent already call; the resulting
   // dialog's own field/save/close handlers (.ucm-form-field,
