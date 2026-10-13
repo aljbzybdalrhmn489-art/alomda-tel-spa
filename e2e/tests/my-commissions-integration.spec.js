@@ -55,7 +55,7 @@ async function seedFacts(agentA, agentB) {
       const id = randomUUID();
       await client.query(
         `INSERT INTO transactions (tenant_id, id, client_ref, party_id, request_hash, service_id, package_id, status, requires_hold, version, correlation_id, created_at, settled_at, gateway_id)
-         VALUES ($1, $2, $3, $4, 'hash', 'svc-1', 'pkg-1', $5, false, 0, 'corr', $6, $7, $8)`,
+         VALUES ($1, $2, $3, $4, 'seed-e2e-mci', 'svc-1', 'pkg-1', $5, false, 0, 'corr', $6, $7, $8)`,
         [TENANT, id, `ref-${randomUUID()}`, agent, status, at(1, 1), settledAt, randomUUID()],
       );
       return id;
