@@ -223,7 +223,7 @@ test.describe('Commission Policy Admin — real backend', () => {
     expect((await backendPolicies(page, serviceCode)).length).toBe(5); // 4 policies, one of them with 2 versions
 
     // 401: an invalid token sends the user back to sign-in with no stale policy data.
-    await page.evaluate(() => { state.session.accessToken = 'invalid-token'; });
+    await page.evaluate(() => { state.session.accessToken = 'invalid-token'; state.session.refreshToken = null; });
     await page.evaluate(() => loadCommissionPoliciesBackendFromBackend());
     await expect(page.locator('#btn-unified-login')).toBeVisible({ timeout: 10_000 });
     expect(await page.evaluate(() => state.session.accessToken)).toBeFalsy();

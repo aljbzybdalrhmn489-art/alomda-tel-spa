@@ -62,7 +62,7 @@ module.exports = defineConfig({
         AUTH_LOCKOUT_MAX_FAILED_ATTEMPTS: '5',
         AUTH_LOCKOUT_DURATION_MS: '60000',
         AUTH_SESSION_LIFETIME_MS: '86400000',
-        AUTH_ACCESS_TOKEN_TTL_MS: '900000',
+        AUTH_ACCESS_TOKEN_TTL_MS: process.env.E2E_ACCESS_TTL_MS || '900000', // a short value (e.g. 2000) lets session-renewal-integration.spec.js watch real expiry
       },
     },
   ],

@@ -30,7 +30,7 @@ function proxyToBackend(req, res) {
 
 const server = http.createServer((req, res) => {
   const urlPath = (req.url || '').split('?')[0];
-  if (urlPath.startsWith('/api/') || urlPath === '/health') { proxyToBackend(req, res); return; }
+  if (urlPath.startsWith('/api/') || urlPath === '/health' || urlPath === '/ready') { proxyToBackend(req, res); return; }
   const productionPath = urlPath === '/production';
   const sameOriginPath = urlPath === '/same-origin';
   let html;

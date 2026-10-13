@@ -297,7 +297,7 @@ test.describe('Default Agent Admin — real backend', () => {
     expect(await backendCurrent(page, c2)).toMatchObject({ agent_id: agentB.id }); // the refused calls changed nothing
 
     // 401: an invalid token sends the user back to sign-in with no stale agent data.
-    await page.evaluate(() => { state.session.accessToken = 'invalid-token'; });
+    await page.evaluate(() => { state.session.accessToken = 'invalid-token'; state.session.refreshToken = null; });
     await page.evaluate((id) => lookupDefaultAgentParty(id), c2);
     await expect(page.locator('#btn-unified-login')).toBeVisible({ timeout: 10_000 });
     expect(await page.evaluate(() => state.session.accessToken)).toBeFalsy();

@@ -231,7 +231,7 @@ test.describe('SPA Margin + FX Admin — real backend', () => {
       return { margin: m.status, fx: f.status };
     });
     expect(forbidden).toEqual({ margin: 403, fx: 403 });
-    await page.evaluate(() => { state.session.accessToken = 'invalid-token'; });
+    await page.evaluate(() => { state.session.accessToken = 'invalid-token'; state.session.refreshToken = null; });
     await page.evaluate(() => loadMarginFxBackendFromBackend());
     await expect(page.locator('#btn-unified-login')).toBeVisible({ timeout: 10_000 });
     expect(await page.evaluate(() => state.session.accessToken)).toBeFalsy();
