@@ -5236,6 +5236,11 @@ function describeApiError(result) {
   if (result.networkError) return result.error.message;
   if (result.status === 403) return "لا تملك صلاحية تنفيذ هذا الإجراء (تم رفضها من الخادم).";
   if (result.status === 401) return "انتهت صلاحية الجلسة. الرجاء تسجيل الدخول مجدداً.";
+  // 503 SERVICE_UNAVAILABLE (the server could not CHECK the identity: infrastructure failure) and 429 RATE_LIMITED are NOT session errors: the
+  // session is kept, nothing is renewed or cleared (only a 401 does that), and the user is told to try again.
+  const errorCode = result.error && result.error.code;
+  if (errorCode === "SERVICE_UNAVAILABLE") return "الخدمة غير متاحة مؤقتاً. جلستك ما زالت قائمة — أعد المحاولة بعد قليل.";
+  if (errorCode === "RATE_LIMITED") return "عدد الطلبات كبير جداً. انتظر قليلاً ثم أعد المحاولة.";
   const details = Array.isArray(result.error.details) && result.error.details.length > 0
     ? " — " + result.error.details.map((d) => d.message).join("، ")
     : "";
