@@ -18,6 +18,7 @@ import { generateKeyPairSync } from 'node:crypto';
 import { createAuthRoutes } from '../backend/src/interfaces/http/auth-routes.ts';
 import { AuthenticationService } from '../backend/src/app/authentication-service.ts';
 import { RefreshService } from '../backend/src/app/refresh-service.ts';
+import { SessionLogoutService } from '../backend/src/app/session-logout-service.ts';
 import { SessionStore } from '../backend/src/modules/security/persistence/session-store.ts';
 import { EdDsaTokenIssuer } from '../backend/src/infrastructure/crypto/eddsa-token-issuer.ts';
 import { EdDsaTokenVerifier } from '../backend/src/infrastructure/crypto/eddsa-token-verifier.ts';
@@ -120,6 +121,8 @@ const users = {
   save: async (r: any) => { userRows.set(String(r.id), r); return ok(undefined); },
   findById: async (id: string) => ok(userRows.get(String(id)) ?? null),
   findByLoginIdentifier: async (login: string) => ok([...userRows.values()].find((r) => r.loginIdentifier === login) ?? null),
+  // the real adapter does this under a row lock; one JS turn is atomic here
+  applyAttempt: async (id: string, update: (current: any) => any) => { const current = userRows.get(String(id)); if (current === undefined) return ok(null); const next = update(current); userRows.set(String(id), next); return ok(next); },
 };
 const credentials = {
   save: async (r: any) => { credentialRows.push(r); return ok(undefined); },
@@ -131,6 +134,7 @@ const sessionRepository = {
   saveAll: async (list: readonly any[]) => { for (const r of list) sessionRows.set(r.id, r); return ok(undefined); },
   findById: async (id: string) => ok(sessionRows.get(id) ?? null),
   findByUser: async (userId: string) => ok([...sessionRows.values()].filter((r) => String(r.userId) === String(userId))),
+  hasLiveSession: async (userId: string, family: string, at: Date) => ok([...sessionRows.values()].some((r) => String(r.userId) === String(userId) && r.refreshFamilyId === family && r.revokedAt === null && r.expiresAt.getTime() > at.getTime())),
   findByFamily: async (family: string) => ok([...sessionRows.values()].filter((r) => r.refreshFamilyId === family)),
 };
 const sessions = new SessionStore({ repository: sessionRepository as never });
@@ -138,10 +142,10 @@ const authentication = new AuthenticationService({
   users: users as never, credentials: credentials as never, passwordVerifier: hasher, sessions, tokenIssuer, clock, ids: sequenceIds,
   lockoutPolicy: { maxFailedAttempts: 5, lockDurationMs: 900_000 }, sessionLifetimeMs: SESSION_LIFETIME_MS, accessTokenTtlMs: ACCESS_TTL_MS,
 });
-const refresh = new RefreshService({ sessions, tokenVerifier, tokenIssuer, clock, ids: sequenceIds, sessionLifetimeMs: SESSION_LIFETIME_MS, accessTokenTtlMs: ACCESS_TTL_MS });
+const refresh = new RefreshService({ sessions, userAccounts: users as never, tokenVerifier, tokenIssuer, clock, ids: sequenceIds, sessionLifetimeMs: SESSION_LIFETIME_MS, accessTokenTtlMs: ACCESS_TTL_MS });
 
 // ---- the REAL request-context factory over the same verifier / account store ----
-const contexts = new RequestContextFactory({ clock, idGenerator: sequenceIds, tenantId: 'tenant-semi', tokenVerifier, userAccounts: users as never, userRoles: { roleNamesOf: async () => ok([]) } as never });
+const contexts = new RequestContextFactory({ clock, idGenerator: sequenceIds, tenantId: 'tenant-semi', tokenVerifier, userAccounts: users as never, sessions, userRoles: { roleNamesOf: async () => ok([]) } as never });
 
 const envelope = (data: unknown, meta: Record<string, unknown> = {}) => ({ status: 200, body: { data, meta: { correlationId: 'semi', ...meta } } });
 const stubs: HttpRoute[] = [
@@ -155,10 +159,11 @@ const stubs: HttpRoute[] = [
   { method: 'GET', path: '/api/v1/catalog', handler: async () => envelope([]) },
   { method: 'GET', path: '/health', handler: async () => ({ status: 200, body: { status: 'ok' } }) },
 ];
-const authRoutes = createAuthRoutes({ authentication, refresh, accessTokenTtlMs: ACCESS_TTL_MS, clock });
+const logout = new SessionLogoutService({ sessions, tokenVerifier, clock });
+const authRoutes = createAuthRoutes({ authentication, refresh, logout, accessTokenTtlMs: ACCESS_TTL_MS, clock });
 
 const server = new NodeHttpServer({
-  host: '127.0.0.1', port: PORT, logger: new StructuredLogger({ module: 'semi', minLevel: 'error', sink: () => {} }),
+  host: '127.0.0.1', port: PORT, logger: new StructuredLogger({ module: 'semi', minLevel: 'error', sink: (l: unknown) => { if (process.env.SEMI_DEBUG) console.error(JSON.stringify(l)); } }),
   corsAllowedOrigins: [SPA_ORIGIN],
   buildContext: (req) => contexts.fromIncoming(req) as never,
 });

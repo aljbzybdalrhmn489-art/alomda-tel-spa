@@ -1017,6 +1017,7 @@ const ADMIN_NAV_ITEMS = [
   { id: "marginFxBackend", label: "الهامش وأسعار الصرف (النظام الفعلي)", icon: "Receipt", description: "إدارة سياسات الهامش (إصدارات) وأسعار الصرف (سجل يُلحق به) عبر الخادم الفعلي" },
   { id: "commissionPoliciesBackend", label: "سياسات العمولة (النظام الفعلي)", icon: "Percent", description: "إدارة سياسات عمولة الوكيل المباشر عبر الخادم: النطاق، التعيين، الصيغة، التمويل، والإصدارات" },
   { id: "transactionsBackend", label: "المعاملات (النظام الفعلي)", icon: "Receipt", description: "إنشاء ومتابعة معاملات حقيقية عبر الخادم: الحالة، الجدول الزمني، وحجز المبلغ" },
+  { id: "adminReadBackend", label: "المراقبة والتقارير (النظام الفعلي)", icon: "BarChart3", description: "قراءة فقط عبر الخادم: معاملات أي طرف، ملخص العمليات، سجل التدقيق، ومحافظ الأطراف وحركاتها" },
   { id: "operationsBackend", label: "العمليات — النظام الفعلي", icon: "Receipt", description: "طلبات الخدمة والموظفون والمجموعات عبر الخادم (التوزيع والحالة يحددهما الخادم)" },
   { id: "telecomCompanies", label: "شركات الاتصالات — محلي (تجريبي)", icon: "RadioTower", description: "إدارة شركات الاتصالات وباقاتها ومنتجاتها" },
   { id: "wifi", label: "الواي فاي", icon: "Wifi", description: "إدارة منظومة الواي فاي: ملاك الشبكات، الشبكات، والمخزون" },
@@ -4857,6 +4858,8 @@ function freshRealTransactionsState() {
   return {
     form: { catalogServiceCode: "", catalogPackageCode: "", targetIdentifier: "", formValuesText: "", submitting: false, error: null },
     catalog: { loading: false, error: null, loaded: false, items: [] },
+    // G-04/G-06: the price QUOTE for the selected package ({key, loading, error, data}); a preview only, never binding.
+    quote: null,
     // The submission currently being (re)tried: {key, payload}. A retry reuses the SAME key and payload.
     submission: null,
     lastResult: null, // {httpStatus, data, correlationId, idempotencyKey}
@@ -5255,6 +5258,18 @@ function describeApiError(result) {
  * never silently refreshes (disclosed limitation, see this block's own
  * header) — the user simply signs in again.
  */
+/**
+ * SEC-DEC-02 (Owner, 2026-10-14) - a USER-INITIATED logout also ends the login on the server: POST /api/v1/auth/logout revokes the refresh family so the refresh
+ * token can never be used again. Best effort and non-blocking: the screen is cleared immediately, a network failure never keeps the user signed in, and the
+ * token is read BEFORE the session state is wiped. (Session expiry / a 401 do not call this - there is nothing left to revoke.) No new UI.
+ */
+function endServerSession() {
+  const token = state.session && state.session.refreshToken;
+  if (!token || typeof ApiClient === "undefined") return;
+  try {
+    ApiClient.post("/api/v1/auth/logout", { refresh_token: token }, { auth: false }).catch(() => {});
+  } catch (e) { /* the local logout proceeds regardless */ }
+}
 function handleApiUnauthorized() {
   state.session = freshSessionState();
   state.app.currentScreen = "login";
@@ -18229,6 +18244,8 @@ function freshSessionState() {
     realTransactions: freshRealTransactionsState(),
     // REAL OPERATIONS V1 — in-memory only (never persisted).
     realOperations: freshRealOperationsState(),
+    // ADMIN READ MODEL — in-memory only (never persisted).
+    adminRead: freshAdminReadState(),
   };
 }
 /** Fixes a real regression: state.admin.modules.wifi.networksWorkspace
@@ -18384,7 +18401,7 @@ function persistAuthState() {
   // PHASE: AGENT + WALLET/BALANCE + EXISTING TRANSACTION V1 — `myWallet`
   // is excluded too: a cached balance is exactly the kind of "stale data
   // presented as fresh" §16 forbids. A reload always refetches it live.
-  const persistable = Object.assign({}, state.session, { refreshToken: null, myWallet: { loading: false, error: null, currency: "YER", data: null }, myCommissions: freshMyCommissionsState(), realTransactions: freshRealTransactionsState(), realOperations: freshRealOperationsState() });
+  const persistable = Object.assign({}, state.session, { refreshToken: null, myWallet: { loading: false, error: null, currency: "YER", data: null }, myCommissions: freshMyCommissionsState(), realTransactions: freshRealTransactionsState(), realOperations: freshRealOperationsState(), adminRead: freshAdminReadState() });
   PersistenceStore.save("session", persistable);
 }
 /**
@@ -32392,8 +32409,41 @@ function rtxCatalogPickersHTML(t, f, labelStyle) {
     '<div style="' + labelStyle + '">الخدمة</div><select id="rtx-catalog-service" style="' + selectStyle + '">' +
       c.items.filter((s) => s.packages.length > 0).map((s) => '<option value="' + escapeHtml(s.service_code) + '"' + (s.service_code === sel.service.service_code ? " selected" : "") + '>' + escapeHtml(s.service_code + " — " + s.name) + '</option>').join("") + '</select>' +
     '<div style="' + labelStyle + '">الباقة</div><select id="rtx-catalog-package" style="' + selectStyle + '">' +
-      sel.service.packages.map((p) => '<option value="' + escapeHtml(p.package_code) + '"' + (p.package_code === sel.pkg.package_code ? " selected" : "") + '>' + escapeHtml(p.package_code + " — " + p.name) + '</option>').join("") + '</select>';
+      sel.service.packages.map((p) => '<option value="' + escapeHtml(p.package_code) + '"' + (p.package_code === sel.pkg.package_code ? " selected" : "") + '>' + escapeHtml(p.package_code + " — " + p.name) + '</option>').join("") + '</select>' +
+    rtxQuoteHTML(t, sel);
 }
+/** Price QUOTE for the selected package (G-04): read-only preview from `GET /api/v1/pricing/quote`. Not a reservation; the server locks the price at validation. */
+async function rtxEnsureQuote() {
+  if (!document.getElementById("rtx-catalog-package")) return; // the pickers are not on screen
+  const t = rtx();
+  const sel = rtxEffectiveCatalogSelection(t);
+  if (!sel || !sel.pkg) return;
+  const key = sel.service.service_code + "\u0000" + sel.pkg.package_code;
+  if (t.quote && t.quote.key === key) return; // one request per selection (an error also stays until "refresh" or another selection)
+  const q = t.quote = { key, loading: true, error: null, data: null };
+  render();
+  const result = await ApiClient.get("/api/v1/pricing/quote?service=" + encodeURIComponent(sel.service.service_code) + "&package=" + encodeURIComponent(sel.pkg.package_code));
+  if (rtx().quote !== q) return; // another selection superseded this answer
+  q.loading = false;
+  if (result.status === 401) { handleApiUnauthorized(); return; }
+  if (!result.ok) { q.error = describeApiError(result); render(); return; }
+  q.data = result.data;
+  render();
+}
+function rtxQuoteHTML(t, sel) {
+  const q = t.quote;
+  const box = 'margin-top:10px;padding:10px 14px;border-radius:11px;border:1px solid ' + C.glassBorder + ';font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:12px;color:' + C.textDim + ';';
+  if (!q || q.key !== sel.service.service_code + "\u0000" + sel.pkg.package_code) return '<div id="rtx-quote" style="' + box + '">جارٍ طلب السعر…</div>';
+  if (q.loading) return '<div id="rtx-quote" style="' + box + '">جارٍ طلب السعر من الخادم…</div>';
+  if (q.error) return '<div id="rtx-quote" data-state="error" style="' + box + 'color:' + C.danger + ';">تعذّر عرض السعر: ' + escapeHtml(q.error) + ' <button id="btn-rtx-quote-refresh" style="margin-inline-start:8px;cursor:pointer;">تحديث</button></div>';
+  const d = q.data;
+  return '<div id="rtx-quote" data-state="ok" data-source="' + escapeHtml(String(d.price_source)) + '" style="' + box + '">' +
+    'السعر المعروض لك: <span id="rtx-quote-price" style="direction:ltr;display:inline-block;color:' + C.text + ';font-weight:800;">' + escapeHtml(d.price.amount) + ' ' + escapeHtml(d.price.currency) + '</span>' +
+    (d.price_source === "OVERRIDE" ? ' <span id="rtx-quote-override">(سعر خاص)</span>' : '') +
+    ' <button id="btn-rtx-quote-refresh" style="margin-inline-start:8px;cursor:pointer;">تحديث</button>' +
+    '<div style="margin-top:4px;font-size:11px;color:' + C.textFaint + ';">عرض سعر فقط: لا حجز ولا خصم. يُثبَّت السعر عند التحقق من المعاملة.</div></div>';
+}
+
 
 /* ════════════════════════════════════════════════════════════════════
    REAL TRANSACTIONS V1 — create / list / detail / timeline / hold, against
@@ -32674,6 +32724,285 @@ function RealTransactionDetailHTML(theme) {
   );
 }
 
+/**
+ * ADMIN READ MODEL (G-01 / G-02 / G-07 / G-10) - the administrator's READ-ONLY monitoring screen over the real backend routes in
+ * `admin-read-routes.ts` (transactions of any party, operations summary, audit log, any party's wallet and movements). Nothing here writes.
+ * Amounts are shown exactly as the server sends them (decimal strings, never converted to numbers); currencies are never added together;
+ * the tenant is the deployment's - no screen here can name one. A 403 (missing permission) is shown as such and the rest of the app is untouched.
+ * State lives in state.session (cleared with every logout path) and is never persisted.
+ */
+const BackendAdminReadApi = {
+  q(params) {
+    const parts = [];
+    Object.keys(params).forEach((k) => {
+      const v = params[k];
+      if (v !== undefined && v !== null && String(v).trim() !== "") parts.push(encodeURIComponent(k) + "=" + encodeURIComponent(String(v).trim()));
+    });
+    return parts.length ? "?" + parts.join("&") : "";
+  },
+  transactions(f, cursor) {
+    return ApiClient.get("/api/v1/admin/transactions" + this.q({ party_id: f.partyId, service: f.service, package: f.pkg, status: f.status, currency: f.currency, provider_id: f.providerId, fulfillment: f.fulfillment, from: f.from, to: f.to, limit: 50, cursor }));
+  },
+  transaction(id) { return ApiClient.get("/api/v1/admin/transactions/" + encodeURIComponent(id)); },
+  report(f) { return ApiClient.get("/api/v1/admin/reports/operations" + this.q({ from: f.from, to: f.to, group_by: f.groupBy, currency: f.currency })); },
+  audit(f, cursor) {
+    return ApiClient.get("/api/v1/admin/audit-log" + this.q({ stream: f.stream, action: f.action, target_type: f.targetType, target_id: f.targetId, actor_party_id: f.actorPartyId, from: f.from, to: f.to, limit: 50, cursor }));
+  },
+  parties(f, cursor) { return ApiClient.get("/api/v1/admin/parties" + this.q({ party_type: f.partyType, status: f.status, zone: f.zone, search: f.search, limit: 50, cursor })); },
+  wallet(partyId) { return ApiClient.get("/api/v1/admin/parties/" + encodeURIComponent(partyId) + "/wallet"); },
+  movements(partyId, f, cursor) {
+    return ApiClient.get("/api/v1/admin/parties/" + encodeURIComponent(partyId) + "/wallet/movements" + this.q({ currency: f.currency, wallet_kind: f.walletKind, from: f.from, to: f.to, limit: 50, cursor }));
+  },
+};
+const ARD_STATUSES = ["CREATED", "VALIDATED", "EXPIRED", "HELD", "QUEUED", "PROCESSING", "SUCCESS", "FAILED", "PENDING_PROVIDER", "MANUAL_RESOLUTION", "SETTLED", "REVERSED"];
+const ARD_CURRENCIES = ["YER", "YEO", "SAR", "USD"];
+const ARD_GROUPS = [["status", "الحالة"], ["service", "الخدمة"], ["package", "الباقة"], ["provider", "المزوّد"], ["party", "الطرف"]];
+const ARD_PARTY_TYPES = ["CUSTOMER", "POS", "AGENT", "MASTER_AGENT", "SUB_AGENT"];
+const ARD_PARTY_STATUSES = ["PENDING_VERIFICATION", "ACTIVE", "SUSPENDED", "BLOCKED", "CLOSING", "CLOSED"];
+const ARD_TABS = [["transactions", "المعاملات"], ["report", "ملخص العمليات"], ["audit", "سجل التدقيق"], ["parties", "الأطراف (العملاء والوكلاء)"], ["wallet", "محفظة طرف"]];
+function ardFreshList() { return { loading: false, loadingMore: false, error: null, loaded: false, items: [], nextCursor: null, hasMore: false, seq: 0 }; }
+function freshAdminReadState() {
+  const now = new Date();
+  const to = now.toISOString().slice(0, 10);
+  const from = new Date(now.getTime() - 29 * 86400000).toISOString().slice(0, 10);
+  return {
+    tab: "transactions",
+    tx: { f: { partyId: "", service: "", pkg: "", status: "", currency: "", providerId: "", fulfillment: "", from: "", to: "" }, list: ardFreshList(), detail: { id: null, loading: false, error: null, data: null } },
+    report: { f: { from, to, groupBy: "status", currency: "" }, loading: false, error: null, loaded: false, data: null, seq: 0 },
+    audit: { f: { stream: "", action: "", targetType: "", targetId: "", actorPartyId: "", from: "", to: "" }, list: ardFreshList() },
+    parties: { f: { partyType: "", status: "", zone: "", search: "" }, list: ardFreshList() },
+    wallet: { partyId: "", f: { currency: "", walletKind: "", from: "", to: "" }, loading: false, error: null, loaded: false, data: null, movements: ardFreshList(), seq: 0 },
+  };
+}
+function ard() {
+  if (!state.session.adminRead) state.session.adminRead = freshAdminReadState();
+  return state.session.adminRead;
+}
+function ardError(result) {
+  if (result.status === 403) return "لا تملك الصلاحية المطلوبة لهذا القسم (رفضها الخادم).";
+  if (result.status === 404) return "غير موجود في هذا المستأجر.";
+  if (result.status === 400) return "المدخلات غير صالحة: " + describeApiError(result);
+  return describeApiError(result);
+}
+/** One loader for every cursor-paged list: the newest request wins (a stale response is dropped); "more" appends. */
+async function ardLoadList(list, fetcher, more) {
+  if (more && (!list.nextCursor || list.loadingMore)) return;
+  const seq = ++list.seq;
+  if (more) { list.loadingMore = true; } else { list.loading = true; list.loadingMore = false; list.items = []; list.nextCursor = null; list.hasMore = false; }
+  list.error = null;
+  render();
+  const result = await fetcher(more ? list.nextCursor : null);
+  if (seq !== list.seq) return;
+  list.loading = false; list.loadingMore = false; list.loaded = true;
+  if (result.status === 401) { handleApiUnauthorized(); return; }
+  if (!result.ok) { list.error = ardError(result); render(); return; }
+  list.items = more ? list.items.concat(result.data) : result.data;
+  list.nextCursor = result.meta ? (result.meta.nextCursor || null) : null;
+  list.hasMore = !!(result.meta && result.meta.hasMore);
+  render();
+}
+function loadAdminReadTransactions(more) { const s = ard().tx; return ardLoadList(s.list, (cursor) => BackendAdminReadApi.transactions(s.f, cursor), more); }
+function loadAdminReadParties(more) { const s = ard().parties; return ardLoadList(s.list, (cursor) => BackendAdminReadApi.parties(s.f, cursor), more); }
+function loadAdminReadAudit(more) { const s = ard().audit; return ardLoadList(s.list, (cursor) => BackendAdminReadApi.audit(s.f, cursor), more); }
+async function loadAdminReadReport() {
+  const s = ard().report;
+  const seq = ++s.seq;
+  s.loading = true; s.error = null; render();
+  const result = await BackendAdminReadApi.report(s.f);
+  if (seq !== s.seq) return;
+  s.loading = false; s.loaded = true;
+  if (result.status === 401) { handleApiUnauthorized(); return; }
+  if (!result.ok) { s.error = ardError(result); s.data = null; render(); return; }
+  s.data = { body: result.data, basis: result.meta ? result.meta.basis : null };
+  render();
+}
+async function loadAdminReadWallet() {
+  const s = ard().wallet;
+  const seq = ++s.seq;
+  s.loading = true; s.error = null; s.data = null; s.movements = ardFreshList(); s.movements.seq = seq; render();
+  const id = s.partyId.trim();
+  const result = await BackendAdminReadApi.wallet(id);
+  if (seq !== s.seq) return;
+  s.loading = false; s.loaded = true;
+  if (result.status === 401) { handleApiUnauthorized(); return; }
+  if (!result.ok) { s.error = ardError(result); render(); return; }
+  s.data = result.data;
+  render();
+  loadAdminReadMovements(false);
+}
+function loadAdminReadMovements(more) {
+  const s = ard().wallet;
+  const id = s.partyId.trim();
+  return ardLoadList(s.movements, (cursor) => BackendAdminReadApi.movements(id, s.f, cursor), more);
+}
+async function openAdminReadTransaction(id) {
+  const d = ard().tx.detail = { id, loading: true, error: null, data: null };
+  render();
+  const result = await BackendAdminReadApi.transaction(id);
+  if (ard().tx.detail !== d) return;
+  d.loading = false;
+  if (result.status === 401) { handleApiUnauthorized(); return; }
+  if (!result.ok) { d.error = ardError(result); render(); return; }
+  d.data = result.data;
+  render();
+}
+function adminReadEnsureLoaded() {
+  const s = ard();
+  if (s.tab === "transactions" && !s.tx.list.loaded && !s.tx.list.loading) loadAdminReadTransactions(false);
+  else if (s.tab === "report" && !s.report.loaded && !s.report.loading) loadAdminReadReport();
+  else if (s.tab === "audit" && !s.audit.list.loaded && !s.audit.list.loading) loadAdminReadAudit(false);
+  else if (s.tab === "parties" && !s.parties.list.loaded && !s.parties.list.loading) loadAdminReadParties(false);
+}
+function ardMoney(m) { return m ? escapeHtml(String(m.amount)) + " " + escapeHtml(String(m.currency)) : "—"; }
+function ardTime(iso) { return typeof iso === "string" ? escapeHtml(iso.slice(0, 19).replace("T", " ")) : "—"; }
+function AdminReadBackendModuleHTML(theme) {
+  const s = ard();
+  const dim = 'font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:11.5px;color:' + C.textDim + ';';
+  const input = 'background:rgba(255,255,255,0.03);border:1px solid ' + C.glassBorder + ';border-radius:10px;padding:7px 9px;color:' + C.text + ';outline:none;font-family:Cairo,sans-serif;font-size:12px;direction:ltr;text-align:left;';
+  const btn = 'padding:7px 13px;border-radius:10px;background:rgba(255,255,255,0.06);border:1px solid ' + C.glassBorder + ';color:' + (theme.bright || theme.accent) + ';font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:12px;cursor:pointer;';
+  const field = (tab, name, value, placeholder, width) => '<input class="ard-input" data-tab="' + tab + '" data-field="' + name + '" value="' + escapeHtml(value) + '" placeholder="' + escapeHtml(placeholder) + '" style="' + input + 'width:' + (width || 130) + 'px;" />';
+  const select = (tab, name, value, options, emptyLabel) => '<select class="ard-input" data-tab="' + tab + '" data-field="' + name + '" style="' + input + '">' + (emptyLabel === null ? "" : '<option value="">' + escapeHtml(emptyLabel) + '</option>') +
+    options.map((o) => { const v = Array.isArray(o) ? o[0] : o; const l = Array.isArray(o) ? o[1] : o; return '<option value="' + escapeHtml(v) + '"' + (v === value ? " selected" : "") + '>' + escapeHtml(l) + '</option>'; }).join("") + '</select>';
+  const errorBox = (id, text) => '<div id="' + id + '" style="margin-top:12px;padding:10px 14px;border-radius:11px;background:' + C.dangerSoft + ';font-family:\'IBM Plex Sans Arabic\',sans-serif;font-size:12px;color:' + C.danger + ';">' + escapeHtml(text) + '</div>';
+  const loading = '<div style="margin-top:12px;' + dim + '">جارٍ التحميل من الخادم…</div>';
+  const row = (cells, extra) => '<div ' + (extra || "") + ' style="display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;padding:8px 10px;margin-bottom:4px;border-radius:10px;border:1px solid ' + C.glassBorder + ';' + dim + '">' + cells + '</div>';
+  const more = (list, id) => list.hasMore && list.nextCursor ? '<button id="' + id + '" ' + (list.loadingMore ? "disabled " : "") + 'style="' + btn + 'margin-top:6px;">' + (list.loadingMore ? "جارٍ التحميل…" : "المزيد") + '</button>' : "";
+
+  const tabs = '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:12px;">' + ARD_TABS.map((t) =>
+    '<button class="ard-tab" data-tab="' + t[0] + '" style="' + btn + (s.tab === t[0] ? 'border-color:' + theme.accent + ';font-weight:800;' : "") + '">' + t[1] + '</button>').join("") + '</div>';
+
+  let body = "";
+  if (s.tab === "transactions") {
+    const f = s.tx.f, l = s.tx.list, d = s.tx.detail;
+    const controls = '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:12px;">' +
+      field("tx", "partyId", f.partyId, "معرّف الطرف (UUID)", 250) + field("tx", "service", f.service, "الخدمة") + field("tx", "pkg", f.pkg, "الباقة") +
+      select("tx", "status", f.status, ARD_STATUSES, "كل الحالات") + select("tx", "currency", f.currency, ARD_CURRENCIES, "كل العملات") +
+      select("tx", "fulfillment", f.fulfillment, ["MANUAL", "PROVIDER"], "كل أنواع التنفيذ") + field("tx", "providerId", f.providerId, "معرّف المزوّد", 250) +
+      field("tx", "from", f.from, "من YYYY-MM-DD", 120) + field("tx", "to", f.to, "إلى YYYY-MM-DD", 120) +
+      '<button id="btn-ard-tx-search" ' + (l.loading ? "disabled " : "") + 'style="' + btn + '">بحث</button></div>';
+    let list = "";
+    if (l.error) list = errorBox("ard-tx-error", l.error);
+    else if (l.loading) list = loading;
+    else if (l.loaded && l.items.length === 0) list = '<div id="ard-tx-empty" style="margin-top:12px;' + dim + '">لا توجد معاملات مطابقة.</div>';
+    else list = '<div id="ard-tx-list" style="margin-top:12px;">' + l.items.map((t) => row(
+      '<span style="direction:ltr;color:' + C.text + ';">' + escapeHtml(String(t.transaction_id).slice(0, 8)) + ' · ' + escapeHtml(t.status) + '</span>' +
+      '<span>' + escapeHtml(t.party.display_name) + ' · ' + escapeHtml(t.service_id) + '/' + escapeHtml(t.package_id) + '</span>' +
+      '<span style="direction:ltr;">' + ardMoney(t.customer_price) + '</span><span style="direction:ltr;">' + ardTime(t.created_at) + '</span>',
+      'class="ard-tx-row" role="button" tabindex="0" data-id="' + escapeHtml(t.transaction_id) + '" data-status="' + escapeHtml(t.status) + '"')).join("") + more(l, "btn-ard-tx-more") + '</div>';
+    let detail = "";
+    if (d.id) {
+      const x = d.data;
+      detail = '<div id="ard-tx-detail" style="margin-top:12px;padding:12px;border-radius:12px;border:1px solid ' + C.glassBorder + ';' + dim + '">' +
+        '<button id="btn-ard-tx-detail-close" style="' + btn + '">إغلاق</button>' +
+        (d.loading ? loading : d.error ? errorBox("ard-tx-detail-error", d.error) : x ?
+          '<div style="margin-top:8px;direction:ltr;text-align:left;color:' + C.text + ';">' + escapeHtml(x.transaction_id) + ' · ' + escapeHtml(x.status) + ' · ' + escapeHtml(x.fulfillment_strategy) + '</div>' +
+          '<div style="margin-top:4px;">سعر العميل: <span class="ard-d-price">' + ardMoney(x.customer_price) + '</span> · تكلفة المزوّد: <span class="ard-d-cost">' + ardMoney(x.provider_cost) + '</span></div>' +
+          '<div style="margin-top:4px;">إصدار قاعدة التسعير: ' + escapeHtml(String(x.pricing.rule_version)) + ' · إصدار سياسة العمولة: ' + escapeHtml(String(x.pricing.commission_policy_version)) + '</div>' +
+          '<div style="margin-top:4px;">الحجز: ' + (x.hold ? escapeHtml(x.hold.status) + ' ' + ardMoney(x.hold.amount) : "لا يوجد") + '</div>' +
+          '<div style="margin-top:6px;color:' + C.text + ';">الجدول الزمني</div>' + x.history.map((h) => '<div class="ard-d-hist" style="direction:ltr;text-align:left;">' + ardTime(h.at) + ' · ' + escapeHtml(String(h.from || "—")) + ' → ' + escapeHtml(h.to) + '</div>').join("") +
+          '<div style="margin-top:6px;color:' + C.text + ';">العمولة</div>' + (x.commission.length === 0 ? '<div>لا توجد قيود عمولة.</div>' : x.commission.map((c) => '<div class="ard-d-comm" style="direction:ltr;text-align:left;">' + escapeHtml(c.kind) + ' · ' + ardMoney(c.total) + '</div>').join("")) : "") +
+        '</div>';
+    }
+    body = controls + list + detail;
+  } else if (s.tab === "report") {
+    const r = s.report, f = r.f;
+    const controls = '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:12px;">' + field("report", "from", f.from, "من YYYY-MM-DD", 120) + field("report", "to", f.to, "إلى YYYY-MM-DD", 120) +
+      select("report", "groupBy", f.groupBy, ARD_GROUPS, null) + select("report", "currency", f.currency, ARD_CURRENCIES, "كل العملات") +
+      '<button id="btn-ard-report-load" ' + (r.loading ? "disabled " : "") + 'style="' + btn + '">عرض</button></div>';
+    let out = "";
+    if (r.error) out = errorBox("ard-report-error", r.error);
+    else if (r.loading) out = loading;
+    else if (r.data) {
+      const b = r.data.body;
+      const rowsHtml = b.rows.length === 0 ? '<div id="ard-report-empty" style="margin-top:12px;' + dim + '">لا توجد معاملات في هذه الفترة.</div>' :
+        '<div id="ard-report-rows" style="margin-top:12px;">' + b.rows.map((x) => row('<span style="direction:ltr;color:' + C.text + ';">' + escapeHtml(String(x.key)) + ' · ' + escapeHtml(String(x.currency || "—")) + '</span><span>الإجمالي ' + escapeHtml(String(x.total)) + ' · مسوّاة ' + escapeHtml(String(x.settled)) + ' · فاشلة ' + escapeHtml(String(x.failed)) + ' · أخرى ' + escapeHtml(String(x.other)) + '</span><span style="direction:ltr;">' + escapeHtml(x.settled_customer_price) + '</span>', 'class="ard-report-row" data-key="' + escapeHtml(String(x.key)) + '" data-currency="' + escapeHtml(String(x.currency || "")) + '"')).join("") + '</div>';
+      const lines = (title, items, fmt, cls) => '<div style="margin-top:10px;"><div style="color:' + C.text + ';font-weight:700;">' + title + '</div>' + (items.length === 0 ? '<div>—</div>' : items.map((i) => '<div class="' + cls + '" data-currency="' + escapeHtml(i.currency) + '" style="direction:ltr;text-align:left;">' + fmt(i) + '</div>').join("")) + '</div>';
+      out = rowsHtml +
+        lines("عدد المعاملات حسب الحالة", b.status_counts.map((c) => ({ currency: c.status, c })), (i) => escapeHtml(i.c.status) + ': ' + escapeHtml(String(i.c.count)), "ard-status-count") +
+        lines("تكلفة المزوّد للمسوّاة (حسب عملة التكلفة)", b.settled_provider_cost, (i) => escapeHtml(i.currency) + ' ' + escapeHtml(i.total), "ard-cost") +
+        lines("العمولة المستحقة (حسب العملة)", b.commission_accrued, (i) => escapeHtml(i.currency) + ' · المجموع ' + escapeHtml(i.pool_total) + ' · تحتفظ به الشركة ' + escapeHtml(i.company_retained), "ard-commission") +
+        '<div id="ard-report-note" style="margin-top:10px;font-size:10.5px;color:' + C.textFaint + ';">تقرير فقط، لا يُنفّذ أي تسوية. لا تُجمع العملات المختلفة. ' + (r.data.basis ? escapeHtml(String(typeof r.data.basis === "string" ? r.data.basis : JSON.stringify(r.data.basis))) : "") + '</div>';
+    }
+    body = controls + out;
+  } else if (s.tab === "audit") {
+    const f = s.audit.f, l = s.audit.list;
+    const controls = '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:12px;">' + field("audit", "stream", f.stream, "المسار (stream)") + field("audit", "action", f.action, "الإجراء") + field("audit", "targetType", f.targetType, "نوع الهدف") +
+      field("audit", "targetId", f.targetId, "معرّف الهدف") + field("audit", "actorPartyId", f.actorPartyId, "معرّف المنفّذ (UUID)", 250) + field("audit", "from", f.from, "من YYYY-MM-DD", 120) + field("audit", "to", f.to, "إلى YYYY-MM-DD", 120) +
+      '<button id="btn-ard-audit-search" ' + (l.loading ? "disabled " : "") + 'style="' + btn + '">بحث</button></div>';
+    let list = "";
+    if (l.error) list = errorBox("ard-audit-error", l.error);
+    else if (l.loading) list = loading;
+    else if (l.loaded && l.items.length === 0) list = '<div id="ard-audit-empty" style="margin-top:12px;' + dim + '">لا توجد سجلات مطابقة.</div>';
+    else list = '<div id="ard-audit-list" style="margin-top:12px;">' + l.items.map((a) => row('<span style="direction:ltr;color:' + C.text + ';">' + ardTime(a.occurred_at) + '</span><span style="direction:ltr;">' + escapeHtml(a.stream) + ' · ' + escapeHtml(a.action) + '</span><span style="direction:ltr;">' + escapeHtml(String(a.target_type || "")) + ' ' + escapeHtml(String(a.target_id || "")) + '</span>', 'class="ard-audit-row" data-action="' + escapeHtml(a.action) + '"')).join("") + more(l, "btn-ard-audit-more") + '</div>';
+    body = controls + list;
+  } else if (s.tab === "parties") {
+    const f = s.parties.f, l = s.parties.list;
+    const controls = '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:12px;">' +
+      select("parties", "partyType", f.partyType, ARD_PARTY_TYPES, "كل الأنواع") + select("parties", "status", f.status, ARD_PARTY_STATUSES, "كل الحالات") +
+      field("parties", "zone", f.zone, "المنطقة", 110) + field("parties", "search", f.search, "بحث: رقم الحساب أو الهاتف أو الاسم", 240) +
+      '<button id="btn-ard-parties-search" ' + (l.loading ? "disabled " : "") + 'style="' + btn + '">بحث</button></div>';
+    let list = "";
+    if (l.error) list = errorBox("ard-parties-error", l.error);
+    else if (l.loading) list = loading;
+    else if (l.loaded && l.items.length === 0) list = '<div id="ard-parties-empty" style="margin-top:12px;' + dim + '">لا توجد أطراف مطابقة.</div>';
+    else list = '<div id="ard-parties-list" style="margin-top:12px;">' + l.items.map((p) => row(
+      '<span style="color:' + C.text + ';">' + escapeHtml(p.display_name) + ' · ' + escapeHtml(p.party_type) + '</span>' +
+      '<span style="direction:ltr;">' + escapeHtml(p.account_number) + ' · ' + escapeHtml(p.phone) + '</span>' +
+      '<span>' + escapeHtml(p.status) + ' · ' + escapeHtml(p.zone_code) + (p.default_agent_id ? ' · الوكيل الافتراضي ' + escapeHtml(String(p.default_agent_id).slice(0, 8)) : "") + '</span>' +
+      '<button class="ard-party-wallet" data-id="' + escapeHtml(p.id) + '" style="' + btn + '">المحفظة</button>',
+      'class="ard-party-row" data-id="' + escapeHtml(p.id) + '" data-type="' + escapeHtml(p.party_type) + '"')).join("") + more(l, "btn-ard-parties-more") + '</div>';
+    body = controls + list;
+  } else {
+    const w = s.wallet, f = w.f, m = w.movements;
+    const controls = '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:12px;">' + field("wallet", "partyId", w.partyId, "معرّف الطرف (UUID)", 270) + select("wallet", "currency", f.currency, ARD_CURRENCIES, "كل العملات") +
+      select("wallet", "walletKind", f.walletKind, ["MAIN", "INSURANCE", "COMMISSION"], "كل أنواع المحافظ") + field("wallet", "from", f.from, "من YYYY-MM-DD", 120) + field("wallet", "to", f.to, "إلى YYYY-MM-DD", 120) +
+      '<button id="btn-ard-wallet-load" ' + (w.loading ? "disabled " : "") + 'style="' + btn + '">عرض</button></div>';
+    let out = "";
+    if (w.error) out = errorBox("ard-wallet-error", w.error);
+    else if (w.loading) out = loading;
+    else if (w.data) {
+      const x = w.data;
+      out = '<div id="ard-wallet" style="margin-top:12px;"><div style="color:' + C.text + ';font-weight:700;">' + escapeHtml(x.party.display_name) + ' · ' + escapeHtml(x.party.party_type) + '</div>' +
+        (x.positions.length === 0 ? '<div id="ard-wallet-empty" style="margin-top:6px;' + dim + '">لا توجد أرصدة لهذا الطرف.</div>' : x.positions.map((p) => row('<span style="direction:ltr;color:' + C.text + ';">' + escapeHtml(p.currency) + ' · ' + escapeHtml(p.wallet_kind) + '</span><span class="ard-pos-balance" style="direction:ltr;">الرصيد ' + escapeHtml(p.ledger_balance) + '</span><span style="direction:ltr;">محجوز ' + escapeHtml(p.held) + ' · حد ائتمان ' + escapeHtml(p.credit_limit) + '</span>', 'class="ard-position" data-currency="' + escapeHtml(p.currency) + '"')).join("")) +
+        '<div style="margin-top:8px;color:' + C.text + ';">الحجوزات النشطة</div>' + (x.active_holds.length === 0 ? '<div>لا توجد.</div>' : x.active_holds.map((h) => row('<span style="direction:ltr;">' + escapeHtml(String(h.transaction_id).slice(0, 8)) + '</span><span style="direction:ltr;">' + ardMoney(h.amount) + '</span>', 'class="ard-hold"')).join("")) +
+        '<div style="margin-top:8px;color:' + C.text + ';">الحركات</div>' +
+        (m.error ? errorBox("ard-movements-error", m.error) : m.loading ? loading : m.items.length === 0 && m.loaded ? '<div id="ard-movements-empty">لا توجد حركات.</div>' :
+          m.items.map((v) => row('<span style="direction:ltr;">' + ardTime(v.applied_at) + '</span><span>' + (v.direction === "INCREASE" ? "زيادة" : "نقص") + '</span><span style="direction:ltr;">' + ardMoney(v.amount) + '</span>', 'class="ard-movement" data-direction="' + escapeHtml(v.direction) + '"')).join("") + more(m, "btn-ard-movements-more")) + '</div>';
+    }
+    body = controls + out;
+  }
+  return '<div id="admin-read-panel" style="padding:20px 20px 0;"><div style="padding:16px;border-radius:16px;border:1px solid ' + theme.border + ';background:rgba(255,255,255,0.02);">' +
+    '<div style="font-family:Cairo,sans-serif;font-weight:800;font-size:15px;color:' + C.text + ';">المراقبة والتقارير (قراءة فقط)</div>' + tabs + body + '</div></div>';
+}
+function bindAdminReadEvents() {
+  const $ = (id) => document.getElementById(id);
+  if (!$("admin-read-panel")) return;
+  const s = ard();
+  document.querySelectorAll(".ard-input").forEach((el) => {
+    const tab = el.getAttribute("data-tab"), name = el.getAttribute("data-field");
+    const target = () => (tab === "wallet" && name === "partyId") ? s.wallet : (tab === "tx" ? s.tx.f : tab === "report" ? s.report.f : tab === "audit" ? s.audit.f : tab === "parties" ? s.parties.f : s.wallet.f);
+    const write = (e) => { target()[name] = e.target.value; };
+    el.oninput = write; el.onchange = write; // state only: a re-render mid-keystroke would recreate the input
+  });
+  document.querySelectorAll(".ard-tab").forEach((b) => { b.onclick = () => { s.tab = b.getAttribute("data-tab"); render(); adminReadEnsureLoaded(); }; });
+  if ($("btn-ard-tx-search")) $("btn-ard-tx-search").onclick = () => { s.tx.detail = { id: null, loading: false, error: null, data: null }; loadAdminReadTransactions(false); };
+  if ($("btn-ard-tx-more")) $("btn-ard-tx-more").onclick = () => loadAdminReadTransactions(true);
+  if ($("btn-ard-tx-detail-close")) $("btn-ard-tx-detail-close").onclick = () => { s.tx.detail = { id: null, loading: false, error: null, data: null }; render(); };
+  document.querySelectorAll(".ard-tx-row").forEach((r) => {
+    const open = () => openAdminReadTransaction(r.getAttribute("data-id"));
+    r.onclick = open;
+    r.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } };
+  });
+  if ($("btn-ard-report-load")) $("btn-ard-report-load").onclick = () => loadAdminReadReport();
+  if ($("btn-ard-audit-search")) $("btn-ard-audit-search").onclick = () => loadAdminReadAudit(false);
+  if ($("btn-ard-audit-more")) $("btn-ard-audit-more").onclick = () => loadAdminReadAudit(true);
+  if ($("btn-ard-parties-search")) $("btn-ard-parties-search").onclick = () => loadAdminReadParties(false);
+  if ($("btn-ard-parties-more")) $("btn-ard-parties-more").onclick = () => loadAdminReadParties(true);
+  document.querySelectorAll(".ard-party-wallet").forEach((b) => { b.onclick = (e) => { e.stopPropagation(); s.wallet.partyId = b.getAttribute("data-id"); s.tab = "wallet"; render(); loadAdminReadWallet(); }; });
+  if ($("btn-ard-wallet-load")) $("btn-ard-wallet-load").onclick = () => loadAdminReadWallet();
+  if ($("btn-ard-movements-more")) $("btn-ard-movements-more").onclick = () => loadAdminReadMovements(true);
+}
+
 function AdminTransactionsBackendModuleHTML(theme) {
   return RealTransactionsPanelHTML(theme);
 }
@@ -32686,7 +33015,9 @@ function bindRealTransactionsEvents() {
   });
   if ($("btn-rtx-submit")) $("btn-rtx-submit").onclick = () => submitRealTransactionForm();
   if ($("rtx-catalog-service")) $("rtx-catalog-service").onchange = (e) => { const f = rtx().form; f.catalogServiceCode = e.target.value; f.catalogPackageCode = ""; render(); };
-  if ($("rtx-catalog-package")) $("rtx-catalog-package").onchange = (e) => { rtx().form.catalogPackageCode = e.target.value; };
+  if ($("rtx-catalog-package")) $("rtx-catalog-package").onchange = (e) => { rtx().form.catalogPackageCode = e.target.value; rtxEnsureQuote(); };
+  if ($("btn-rtx-quote-refresh")) $("btn-rtx-quote-refresh").onclick = () => { rtx().quote = null; render(); };
+  rtxEnsureQuote();
   if ($("btn-rtx-retry")) $("btn-rtx-retry").onclick = () => retryRealTransactionSubmission();
   if ($("btn-rtx-list-refresh")) $("btn-rtx-list-refresh").onclick = () => loadRealTransactionsList();
   if ($("btn-rtx-load-more")) $("btn-rtx-load-more").onclick = () => loadMoreRealTransactions();
@@ -33355,6 +33686,7 @@ function bindRealOperationsEvents() {
   if ($("btn-rops-myreq-refresh")) $("btn-rops-myreq-refresh").onclick = () => loadRealEmployeeRequests();
   if ($("btn-rops-hist-refresh")) $("btn-rops-hist-refresh").onclick = () => loadRealEmployeeHistory();
   if ($("btn-real-employee-logout")) $("btn-real-employee-logout").onclick = () => {
+    endServerSession();
     state.session = freshSessionState();
     state.app.currentScreen = "login";
     persistAuthState();
@@ -40517,6 +40849,7 @@ const ADMIN_MODULE_RENDERERS = {
   commissionPoliciesBackend: AdminCommissionPoliciesBackendModuleHTML,
   transactionsBackend: AdminTransactionsBackendModuleHTML,
   operationsBackend: AdminOperationsBackendModuleHTML,
+  adminReadBackend: AdminReadBackendModuleHTML,
   telecomCompanies: AdminTelecomCompaniesModuleHTML,
   wifi: AdminWifiModuleHTML,
   games: AdminGamesModuleHTML,
@@ -40837,6 +41170,7 @@ function attachEvents() {
     };
   });
   if ($("btn-workspace-select-logout")) $("btn-workspace-select-logout").onclick = () => {
+    endServerSession();
     state.session = freshSessionState();
     resetWifiCrossContextNavigationState();
     state.app.currentScreen = "login";
@@ -40860,6 +41194,7 @@ function attachEvents() {
   };
   if ($("btn-employee-logout-confirm")) $("btn-employee-logout-confirm").onclick = () => {
     state.operations.logoutConfirmOpen = false;
+    endServerSession();
     state.session = freshSessionState();
     resetWifiCrossContextNavigationState();
     state.app.currentScreen = "login";
@@ -40904,6 +41239,7 @@ function attachEvents() {
   // exists (see renderCustomerHomeScreen() itself).
   if ($("btn-customer-home-logout")) $("btn-customer-home-logout").onclick = () => {
     resetWifiCrossContextNavigationState();
+    endServerSession();
     state.session = freshSessionState();
     state.app.currentScreen = "login";
     persistAuthState();
@@ -40915,6 +41251,7 @@ function attachEvents() {
   };
   // PHASE: AGENT + WALLET/BALANCE + EXISTING TRANSACTION V1 — "My Wallet" home.
   if ($("btn-my-wallet-logout")) $("btn-my-wallet-logout").onclick = () => {
+    endServerSession();
     state.session = freshSessionState();
     state.app.currentScreen = "login";
     persistAuthState();
@@ -41706,6 +42043,11 @@ function attachEvents() {
       if (moduleId === "transactionsBackend") {
         loadRealTransactionsList();
       }
+      // ADMIN READ MODEL — a fresh entry starts from clean read state and refetches the visible tab.
+      if (moduleId === "adminReadBackend") {
+        state.session.adminRead = freshAdminReadState();
+        adminReadEnsureLoaded();
+      }
       // REAL OPERATIONS V1 — fresh entry refetches from the real backend (never the local mock engine).
       if (moduleId === "operationsBackend") {
         const ro = rops();
@@ -41756,6 +42098,7 @@ function attachEvents() {
     });
   }
   if ($("btn-admin-logout")) $("btn-admin-logout").onclick = () => {
+    endServerSession();
     state.session = freshSessionState();
     resetWifiCrossContextNavigationState();
     state.admin.navigation.activeModule = "dashboard";
@@ -43354,6 +43697,7 @@ function attachEvents() {
   if ($("btn-admin-services-backend-retry")) $("btn-admin-services-backend-retry").onclick = () => loadServicesBackendFromBackend();
   bindCatalogFoundationEvents();
   bindRealTransactionsEvents();
+  bindAdminReadEvents();
   bindRealOperationsEvents();
 
   /* ── Provider Account Admin (Phase 1) ── */
@@ -43754,6 +44098,7 @@ function attachEvents() {
     // resurrect the old role, then routed to the one unified login
     // screen every role shares. No agent-specific navigation state
     // (state.dashboard.menuOpen included) survives either.
+    endServerSession();
     state.session = freshSessionState();
     resetWifiCrossContextNavigationState();
     state.dashboard.menuOpen = false;
@@ -43773,6 +44118,7 @@ function attachEvents() {
     render();
   };
   if ($("btn-owner-workspace-logout")) $("btn-owner-workspace-logout").onclick = () => {
+    endServerSession();
     state.session = freshSessionState();
     resetWifiCrossContextNavigationState();
     state.ownerWorkspace.selectedNetworkId = null;
@@ -45795,6 +46141,9 @@ if (!hasAdministratorAccount()) {
   }
   if (state.app.currentScreen === "adminPanel" && getSafeActiveAdminModuleId() === "transactionsBackend" && state.session.accessToken) {
     loadRealTransactionsList();
+  }
+  if (state.app.currentScreen === "adminPanel" && getSafeActiveAdminModuleId() === "adminReadBackend" && state.session.accessToken) {
+    adminReadEnsureLoaded();
   }
   if (state.app.currentScreen === "adminPanel" && getSafeActiveAdminModuleId() === "operationsBackend" && state.session.accessToken) {
     loadRealOpsRequests();
